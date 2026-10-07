@@ -324,8 +324,8 @@ function merge(a,b){a=norm(a);b=norm(b);const T={...a.tomb,...b.tomb};
  const mm=(x,y,pick)=>{const m=new Map();[...x,...y].forEach(r=>{const o=m.get(r.id);m.set(r.id,o?pick(o,r):r)});return[...m.values()]};
  const lw=(o,r)=>(r.u||0)>(o.u||0)?r:o,first=o=>o,vd=(o,r)=>({...((r.u||0)>(o.u||0)?r:o),void:o.void||r.void,vt:Math.max(o.vt||0,r.vt||0)||undefined});
  return{...a,items:mm(a.items,b.items,lw).filter(i=>!T[i.id]),parties:mm(a.parties,b.parties,lw).filter(p=>!T[p.id]),sups:mm(a.sups,b.sups,lw).filter(p=>!T[p.id]),
-  bills:mm(a.bills,b.bills,vd).sort((x,y)=>y.t-x.t),purch:mm(a.purch,b.purch,vd).sort((x,y)=>y.t-x.t),
-  pays:mm(a.pays,b.pays,vd).sort((x,y)=>y.t-x.t),spays:mm(a.spays,b.spays,vd).sort((x,y)=>y.t-x.t),exp:mm(a.exp,b.exp,vd).filter(i=>!T[i.id]),notes:mm(a.notes,b.notes,vd).sort((x,y)=>y.t-x.t),est:mm(a.est,b.est,vd).sort((x,y)=>y.t-x.t),adj:mm(a.adj,b.adj,first),tomb:T,
+  bills:mm(a.bills,b.bills,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),purch:mm(a.purch,b.purch,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),
+  pays:mm(a.pays,b.pays,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),spays:mm(a.spays,b.spays,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),exp:mm(a.exp,b.exp,vd).filter(i=>!T[i.id]),notes:mm(a.notes,b.notes,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),est:mm(a.est,b.est,vd).filter(i=>!T[i.id]).sort((x,y)=>y.t-x.t),adj:mm(a.adj,b.adj,first).filter(i=>!T[i.id]),tomb:T,
   shop:(b.shop&&(b.shop.u||0)>((a.shop||{}).u||0))?b.shop:a.shop,mig2:1}}
 const fp=d=>['items','parties','bills','pays','adj','sups','purch','spays','exp','notes','est'].map(k=>(d[k]||[]).map(r=>r.id+':'+(r.u||'')+(r.void?'v':'')).sort().join()).join('|')+Object.keys(d.tomb||{}).sort().join()+((d.shop||{}).u||0);
 const SK='shopsync';let sc={};try{sc=JSON.parse(localStorage[SK]||'{}')}catch(e){}
