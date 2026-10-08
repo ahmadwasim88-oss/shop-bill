@@ -1,6 +1,6 @@
 {
- "name": "Shop Bill - WAZ",
- "short_name": "Shop Bill _WAZ",
+ "name": "Shop Bill",
+ "short_name": "Shop Bill",
  "start_url": "./",
  "scope": "./",
  "display": "standalone",
