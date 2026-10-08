@@ -333,6 +333,7 @@ const b64e=s=>{const u=new TextEncoder().encode(s);let r='';for(let i=0;i<u.leng
 const b64d=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g,'')),c=>c.charCodeAt(0)));
 const gh=(m,body,acc)=>{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),15000);return fetch('https://api.github.com/repos/'+sc.repo+'/contents/'+(sc.path||'shopbill-data.json'),{method:m,cache:'no-store',signal:ac.signal,headers:{Authorization:'Bearer '+sc.token,Accept:acc||'application/vnd.github+json'},body:body?JSON.stringify(body):undefined}).finally(()=>clearTimeout(to))};
 function queueSync(){if(!sc.token||!sc.repo)return;clearTimeout(tmr);tmr=setTimeout(()=>syncNow(),2500)}
+function dupNos(){const s={},d=[];db.bills.forEach(b=>{if(b.void)return;s[b.no]=(s[b.no]||0)+1;if(s[b.no]==2)d.push(b.no)});return d}
 async function syncNow(manual){
  if(!sc.token||!sc.repo){if(manual)alert('Enter the repo and token first');return}
  if(busy){again=1;return}
@@ -343,7 +344,7 @@ async function syncNow(manual){
   if(g.status==200){const j=await g.json();sha=j.sha;const t=j.content?b64d(j.content):await(await gh('GET',0,'application/vnd.github.raw+json')).text();rem=JSON.parse(t);if(!Array.isArray(rem.items))throw new Error('data file is not a Shop Bill file')}
   else if(g.status==401||g.status==403)throw new Error('token rejected');
   else if(g.status!=404)throw new Error('GitHub error '+g.status);
-  if(rem)db=merge(db,rem);recalc();
+  if(rem)db=merge(db,rem);recalc();{const dn=dupNos();if(dn.length&&!dupNos.w){dupNos.w=1;setTimeout(()=>warn('Two phones used the same bill letter ('+dn.slice(0,3).join(', ')+'). Set a different letter on each phone in Settings, then fix the duplicates.'),0)}}
   if(!rem||fp(rem)!=fp(db)){
    const p=await gh('PUT',{message:'sync '+DEV+' '+new Date().toISOString(),content:b64e(JSON.stringify(db)),sha});
    if(p.status==409||p.status==422)continue;
@@ -747,7 +748,7 @@ function finish(p){const ls=cart.map(line).filter(Boolean);if(!ls.length)return 
  if(extra>0)db.pays.unshift({id:uid(),no:nextRNo(),pid:pt.id,amt:extra,mode:bmode==='Split'?'Cash':bmode,t:b.t,adv:1,bill:b.id,note:'Advance with bill '+b.no});
  if(estId){const e=db.est.find(x=>x.id==estId);if(e){e.status='converted';e.bill=(o0||b).no;e.u=Date.now()}}
  const fin=o0||b;resetSale();recalc();save();tab='home';render();toast('Bill '+fin.no+(o0?' updated':' saved')+(extra>0?' · advance ₹'+money(extra)+' kept':''));billView(fin.id,0,o0?'updated':'saved');if(p)printBill(fin)}
-function editBill(id){const b=db.bills.find(x=>x.id==id);if(!b||b.void)return;if(cart.length&&!confirm('Replace the current cart with this bill for editing?'))return;
+function editBill(id){const b=db.bills.find(x=>x.id==id);if(!b||b.void)return;if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first, then edit the bill.');if(cart.length&&!confirm('Replace the current cart with this bill for editing?'))return;
  resetSale();editId=id;cart=b.lines.map(l=>{const it=db.items.find(x=>x.id==l.id),c={id:l.id||(db.items.find(i=>i.name==l.n)||{}).id||uid(),q:l.q,g:l.g,n:l.n,h:l.h,un:l.un,dv:l.dv,dt:l.dt};if(!it||l.p!=it.price)c.p=l.p;if(l.pp>0&&(!it||l.pp!=it.pp))c.pp=l.pp;return c});bparty=b.pid||'';bdv=b.bd||'';
  bpay=dueOf(b)>0.005?(b.paid>0?'part':'credit'):'full';bdate=dayStr(b.t);if(b.pm){bmode='Split';bsp=blankSp();b.pm.forEach(x=>bsp[x.m]=String(x.a))}else{bmode=b.mode||'Cash';brecv=bpay!='full'?String(b.paid):''}{const ad=advSum('pays',b,'Advance with bill ');if(ad>0){bpay='part';brecv=String(Math.round((b.paid+ad)*100)/100)}}
  closeAll();tab='bill';render()}
@@ -761,7 +762,7 @@ function pru(id,ru){const l=pcart.find(x=>x.id==id);if(!l)return;const o=l.ru||1
 function psetQ(id){const i=db.items.find(x=>x.id==id)||{},pq=+i.pq>1?+i.pq:1,b=$('#pkb'+id),p=$('#pkp'+id);pset(id,'q',Math.round(((+(b&&b.value)||0)*pq+(+(p&&p.value)||0))*1000)/1000)}
 
 function padd(id){const i=db.items.find(x=>x.id==id),l=pcart.find(x=>x.id==id);if(!l)pcart.push({id,q:0,f:1,ru:+i.pq>1?+i.pq:1,r:+((i.cost||0)*(+i.pq>1?+i.pq:1)*(1+((comp()||pgst=='n')?0:(i.gst??5))/100)).toFixed(2),g:i.gst??5,n:i.name,h:i.hsn||'',un:i.unit||'PCS'});render()}
-function editP(id){const p=db.purch.find(x=>x.id==id);if(!p||p.void)return;if(pcart.length&&!confirm('Replace the current purchase draft with this bill for editing?'))return;
+function editP(id){const p=db.purch.find(x=>x.id==id);if(!p||p.void)return;if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This purchase has a return. Cancel the debit note first, then edit the purchase.');if(pcart.length&&!confirm('Replace the current purchase draft with this bill for editing?'))return;
  pEditId=id;pgst=p.ng?'n':'y';psup=p.sid;pno=p.no=='-'?'':p.no;pdate=dayStr(p.t);pmode=p.mode||'Cash';psp=blankSp();if(p.pm){pmode='Split';p.pm.forEach(x=>psp[x.m]=String(x.a))}ppay=p.paid>=p.total-0.005?'full':p.paid<=0?'credit':'part';precv=ppay=='part'?String(p.paid):ppay=='credit'?'0':'';{const ad=advSum('spays',p,'Advance with invoice ');if(ad>0){ppay='part';precv=String(Math.round((p.paid+ad)*100)/100)}}
  pcart=p.lines.map(l=>({id:l.id,q:l.q,f:1,ru:l.ru||1,r:+((l.rr??l.r)*(1+(l.g||0)/100)).toFixed(4),g:l.g,n:l.n,h:l.h,un:l.un,bt:l.bt,ex:l.ex}));closeAll();tab='purch';render()}
 function vPurch(){const P=pcalc();
