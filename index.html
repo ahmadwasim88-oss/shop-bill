@@ -125,7 +125,7 @@ function impCsv(f){if(!f)return;f.text().then(t=>{let n=0;t.split(/\r?\n/).slice
 const dueOf=b=>b.total-(b.paid??b.total);
 const IC2={wa:'<path d="M21 12a9 9 0 01-13.4 7.8L3 21l1.3-4.4A9 9 0 1121 12z"/>',sms:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/>',print:'<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M7 14h10v7H7z"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/>',del:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',cash:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/>',undo:'<path d="M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3"/>',doc:'<path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6"/>'};
 const ab=(i,l,f,c)=>`<button class="ab ${c||''}" onclick="${f}"><svg viewBox="0 0 24 24">${IC2[i]}</svg>${l}</button>`;
-let per='today';
+let per='all';
 function inPer(b){const n=new Date(),d=new Date(b.t);if(per=='today')return d.toDateString()==n.toDateString();if(per=='7d')return n-d<7*864e5;if(per=='month')return d.getMonth()==n.getMonth()&&d.getFullYear()==n.getFullYear();return true}
 let partyF='all';
 
@@ -181,8 +181,8 @@ function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=vi
 
 function exportItems(){const R=[['Name','Barcode','HSN','Unit','MRP','Selling price (incl. GST)','GST %','Stock','Last purchase rate','Reorder level'],...srt(db.items,'name').map(i=>[i.name,i.code,i.hsn||'',i.unit||'PCS',i.mrp,i.price,i.gst,i.stock,i.cost||'',i.min??5])];
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+R.map(r=>r.map(cq).join(',')).join('\r\n')],{type:'text/csv'}));a.download='items-'+today()+'.csv';a.click();toast('Items exported')}
-function resetAll(){if(sc.repo)return warn('Disconnect sync first, or the data will come back from GitHub.');pg('Reset all data',()=>`<div class="c bad">This permanently deletes all items, bills, parties and settings on this device. Download a backup first if you may need them.</div>${fld('Enter the PIN to continue',`<input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">`)}`,()=>`<button class="btn r" onclick="resetGo()">Erase everything</button>`)}
-function resetGo(){if(($('#pin').value||'')!=='4787')return bad('#pin','Wrong PIN');db={items:[],bills:[],shop:{name:'My Shop',addr:'',gstin:''},seq:1,parties:[],pays:[],adj:[],tomb:{},sups:[],purch:[],spays:[],exp:[],notes:[],est:[]};cart=[];pcart=[];closeAll();save();render();toast('All data erased')}
+function resetAll(){pg('Reset data',()=>{const m=segVal('rmod')||'Data only';return `<div class="c bad">This permanently deletes data on this phone${sc.repo?' and, through sync, on your other phones and the saved copy':''}. Download a backup first if you may need it.</div>${fld('What to erase',SEG('rmod',['Data only','Everything'],'Data only'),'Data only keeps shop details, tax scheme, messages, print and share options and your sync connection. Everything also resets those.')}${fld('Enter the PIN to continue',`<input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">`)}`},()=>`<button class="btn r" onclick="resetGo()">Erase now</button>`)}
+function resetGo(){if(($('#pin').value||'')!=='4787')return bad('#pin','Wrong PIN');const all=segVal('rmod')=='Everything',o=db;db={items:[],bills:[],shop:all?{name:'My Shop',addr:'',gstin:''}:o.shop,seq:1,parties:[],pays:[],adj:[],tomb:{},sups:[],purch:[],spays:[],exp:[],notes:[],est:[],mig2:o.mig2,mig3:o.mig3,lastBackup:o.lastBackup,rst:Date.now()};cart=[];pcart=[];closeAll();save();render();toast(all?'Everything erased':'Data erased, settings kept')}
 function backup(){db.lastBackup=Date.now();save();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db)],{type:'application/json'}));a.download='shopbill-'+new Date().toISOString().slice(0,10)+'.json';a.click()}
 function restore(f){if(!f)return;f.text().then(t=>{try{const d=JSON.parse(t);if(!d.items)throw 0;if(!confirm('Merge this backup into the current data? Nothing will be deleted.'))return;{const cur=db;db=d;db.items=db.items||[];db.bills=db.bills||[];db.parties=db.parties||[];db.pays=db.pays||[];db.adj=db.adj||[];db.tomb=db.tomb||{};migrate();db=cur}db=merge(db,d);recalc();save();render()}catch(e){alert('Not a valid backup file')}})}
 /* ---------- scanner ---------- */
@@ -320,7 +320,7 @@ function recalc(){const S={},B={},SB={};db.adj.forEach(a=>S[a.item]=(S[a.item]||
 function nextNo(){let m=0;db.bills.forEach(b=>{const x=String(b.no);if(x.startsWith(DEV)&&/^\d+$/.test(x.slice(DEV.length)))m=Math.max(m,+x.slice(DEV.length))});return DEV+(m+1)}
 function setDev(v){v=v.trim().toUpperCase();if(v){DEV=v;try{localStorage.shopdev=v}catch(e){}}}
 function norm(d){d={...d};['items','bills','parties','pays','adj','sups','purch','spays','exp','notes','est'].forEach(k=>d[k]=d[k]||[]);d.tomb=d.tomb||{};return d}
-function merge(a,b){a=norm(a);b=norm(b);const T={...a.tomb,...b.tomb};
+function merge(a,b){a=norm(a);b=norm(b);if((a.rst||0)!==(b.rst||0))return (a.rst||0)>(b.rst||0)?a:b;const T={...a.tomb,...b.tomb};
  const mm=(x,y,pick)=>{const m=new Map();[...x,...y].forEach(r=>{const o=m.get(r.id);m.set(r.id,o?pick(o,r):r)});return[...m.values()]};
  const lw=(o,r)=>(r.u||0)>(o.u||0)?r:o,first=o=>o,vd=(o,r)=>({...((r.u||0)>(o.u||0)?r:o),void:o.void||r.void,vt:Math.max(o.vt||0,r.vt||0)||undefined});
  return{...a,items:mm(a.items,b.items,lw).filter(i=>!T[i.id]),parties:mm(a.parties,b.parties,lw).filter(p=>!T[p.id]),sups:mm(a.sups,b.sups,lw).filter(p=>!T[p.id]),
@@ -649,20 +649,32 @@ function vProfit(){const bs=db.bills.filter(b=>!b.void&&inPer(b)),ns=db.notes.fi
  bs.forEach(b=>{const cs=C.bill[b.id]||[],ex=b.total-(b.ro||0)-b.tax,w=b.lines.map(l=>(l.nt??lnet(l))/(1+(comp()?0:(l.g||0))/100)),ws=w.reduce((t,x)=>t+x,0)||1;b.lines.forEach((l,k)=>{const r=row(l);r.q+=l.q;r.s+=ex*w[k]/ws;r.c+=cs[k]||0})});
  ns.forEach(n=>{const sb=db.bills.find(x=>x.id==n.ref),src=sb&&C.bill[sb.id],ws=n.lines.reduce((t,l)=>t+l.q*l.p,0)||1;n.lines.forEach(l=>{const r=row(l);r.q-=l.q;r.s-=n.taxable*(l.q*l.p)/ws;if(n.rs!==false&&sb){const k=sb.lines.findIndex(x=>x.id==l.id);if(k>=0&&src&&sb.lines[k].q>0)r.c-=src[k]/sb.lines[k].q*l.q}})});
  const IR=Object.values(IT).sort((a,b)=>(b.s-b.c)-(a.s-a.c)),IS=IR.reduce((t,r)=>t+r.s,0),ICt=IR.reduce((t,r)=>t+r.c,0);
+ const gO=db.bills.filter(b=>!b.void).reduce((t,b)=>t+b.tax,0)-db.notes.filter(n=>!n.void&&n.kind=='c').reduce((t,n)=>t+n.tax,0),gI=(comp()?0:db.purch.filter(p=>!p.void&&!p.ng).reduce((t,p)=>t+p.tax,0)-db.notes.filter(n=>{const q=!n.void&&n.kind=='d'&&db.purch.find(x=>x.id==n.ref);return q&&!q.ng}).reduce((t,n)=>t+(n.tax||0),0))+db.exp.filter(e=>!e.void).reduce((t,e)=>t+(e.amt-ECOST(e)),0),gN=gO-gI;
  const sv=db.items.reduce((s,i)=>s+Math.max(0,i.stock)*(i.cost||0),0);
- return `${perSel()}<div class="c" style="margin-top:10px"><table class="pl">
- <tr><td>Sales <span class="m">excluding GST</span></td><td>₹${money(sales)}</td></tr>
- ${ret>0.004?`<tr><td class="sub">Less: sales returns</td><td>−₹${money(ret)}</td></tr>`:''}
- <tr class="t"><td>Net sales</td><td>₹${money(net)}</td></tr>
- <tr><td class="sub">Cost of goods sold</td><td>−₹${money(cogs)}</td></tr>
- <tr class="t"><td>Gross profit <span class="m">${mg.toFixed(1)}% margin</span></td><td class="${gp<0?'due':'rcv'}">₹${money(gp)}</td></tr>
- ${ex>0?`<tr><td class="hd" colspan="2">Expenses</td></tr>${Object.entries(cat).map(([k,v])=>`<tr><td class="sub">${esc(k)}</td><td>−₹${money(v)}</td></tr>`).join('')}<tr class="t"><td>Total expenses</td><td>−₹${money(ex)}</td></tr>`:''}
- <tr class="big"><td>Net profit</td><td class="${np<0?'due':'rcv'}">₹${money(np)}</td></tr></table>
- ${no.size?`<p class="m due">${no.size} item(s) sold have no purchase price yet, so profit looks higher than it is: ${esc([...no].slice(0,4).join(', '))}. Add their purchase price in Items.</p>`:''}
- <p class="m">Sales are shown without GST, which belongs to the government. ${disc>0.004?'Discounts given (₹'+money(disc)+') are already taken off. ':''}${cr>0.004?'GST credit on expenses (₹'+money(cr)+') is not counted as an expense. ':''}Cost of goods is the average purchase cost at the time of each sale; GST you cannot claim back is part of the cost.</p></div>
- <div class="sec">Profit by item <span class="m">before expenses</span></div><div class="c"><table class="tbl"><tr><th>Item</th><th>Sales</th><th>Profit</th></tr>${IR.map(r=>`<tr><td>${esc(r.n)}</td><td>${money(r.s)}</td><td><b class="${r.s-r.c<0?'due':'rcv'}">${money(r.s-r.c)}</b></td></tr>`).join('')||'<tr><td colspan="3" class="m">No sales in this period</td></tr>'}${IR.length?`<tr><td><b>Total</b></td><td><b>${money(IS)}</b></td><td><b class="${IS-ICt<0?'due':'rcv'}">${money(IS-ICt)}</b></td></tr>`:''}</table></div>
- <div class="sec">Stock in hand</div><div class="c line sp"><span>Value at latest purchase price</span><b>₹${money(sv)}</b></div>
- <div class="sec">Money in and out</div><div class="c line sp" style="margin-bottom:8px"><span>Total in hand now <span class="m">all time, all modes</span></span><b class="tt">₹${money(T.h)}</b></div><div class="c"><table class="tbl"><tr><th>Mode</th><th>In</th><th>Out</th><th>Net</th><th>In hand</th></tr>${modes.map(m=>{const x=M[m]||{i:0,o:0},a=A[m]||{i:0,o:0};return`<tr><td>${esc(m)}</td><td>${money(x.i)}</td><td>${money(x.o)}</td><td>${money(x.i-x.o)}</td><td><b class="${a.i-a.o<0?'due':''}">${money(a.i-a.o)}</b></td></tr>`}).join('')||'<tr><td colspan="5" class="m">No transactions yet</td></tr>'}${modes.length?`<tr><td><b>Total</b></td><td>${money(T.i)}</td><td>${money(T.o)}</td><td>${money(T.i-T.o)}</td><td><b>${money(T.h)}</b></td></tr>`:''}</table></div>`}
+ const PN2={today:'Today','7d':'Last 7 days',month:'This month',all:'All time'},col=v=>v<0?'due':'rcv',R='style="text-align:right;white-space:nowrap"',pc=(a,b)=>b>0?(a/b*100).toFixed(0)+'%':'—',
+  rowH=(r,x)=>`<tr${x?' class="xr" style="display:none"':''}><td>${esc(r.n)}</td><td ${R}>${money(r.s)}</td><td ${R}><b class="${col(r.s-r.c)}">${money(r.s-r.c)}</b></td><td ${R}>${pc(r.s-r.c,r.s)}</td></tr>`,
+  th=(...h)=>'<tr>'+h.map((x,k)=>`<th${k?' '+R:''}>${x}</th>`).join('')+'</tr>',
+  xb=(n,c)=>n>0?`<tr><td colspan="${c}" style="text-align:center"><button class="btn o sm" onclick="const t=this.closest('table'),h=this.dataset.o!=='1';t.querySelectorAll('.xr').forEach(r=>r.style.display=h?'':'none');this.dataset.o=h?'1':'0';this.textContent=h?'Show fewer':'Show ${n} more'">Show ${n} more</button></td></tr>`:'',
+  tile=(l,v,c,sub)=>`<div class="c" style="padding:10px 8px;margin:0;min-width:0"><div class="m">${l}</div><b class="${c||''}" style="font-size:16px;display:block;overflow-wrap:anywhere">₹${money(v)}</b><div class="m" style="font-size:11px">${sub||'&nbsp;'}</div></div>`,
+  loss=IR.filter(r=>r.s-r.c<-0.004).length,
+  SK=db.items.filter(i=>i.stock>0.0001&&(i.cost||0)>0).map(i=>({n:i.name,q:stkLong(i),v:i.stock*i.cost})).sort((a,b)=>b.v-a.v);
+ return `<div class="line sp" style="margin-top:6px"><span></span>${perSel()}</div>
+ ${no.size?`<div class="c bad" style="margin-top:10px">${no.size} item(s) sold have no purchase price yet, so profit looks higher than it is: ${esc([...no].slice(0,4).join(', '))}. Add their purchase price in Items.</div>`:''}
+ <div class="g3" style="margin-top:10px">${tile('Net profit',np,col(np),PN2[per]+' · '+pc(np,net))}${tile('Money in hand',T.h,col(T.h),'right now')}${tile('Stock value',sv,'','right now')}</div>
+ <div class="sec">Profit and loss <span class="m">${loss?'<b class="due">'+loss+' at a loss</b>':'sales without GST'}</span></div>
+ <div class="c"><table class="tbl">${th('Item','Sales','Profit','Margin')}
+ ${IR.map((r,k)=>rowH(r,k>=5)).join('')||'<tr><td colspan="4" class="m">No sales in this period</td></tr>'}${xb(IR.length-5,4)}
+ <tr class="t"><td><b>Gross profit</b></td><td ${R}><b>${money(net)}</b></td><td ${R}><b class="${col(gp)}">${money(gp)}</b></td><td ${R}><b>${pc(gp,net)}</b></td></tr>
+ ${Object.entries(cat).map(([k,v])=>`<tr><td>Less: ${esc(k)}</td><td></td><td ${R}>−${money(v)}</td><td></td></tr>`).join('')}
+ <tr class="t"><td><b>Net profit</b></td><td></td><td ${R}><b class="${col(np)}">${money(np)}</b></td><td ${R}><b>${pc(np,net)}</b></td></tr></table>
+ <details><summary class="m">How this is worked out</summary><p class="m">Net sales ₹${money(net)}${ret>0.004?' (after returns of ₹'+money(ret)+')':''} minus cost of goods ₹${money(cogs)} gives gross profit. Sales are shown without GST, which belongs to the government. ${disc>0.004?'Discounts given (₹'+money(disc)+') are already taken off. ':''}${cr>0.004?'GST credit on expenses (₹'+money(cr)+') is not counted as an expense. ':''}Cost of goods is the average purchase cost at the time of each sale; GST you cannot claim back is part of the cost.</p></details></div>
+ <div class="sec">Money <span class="m">in and out follow the period, in hand is all time</span></div>
+ <div class="c"><table class="tbl">${th('Mode','In','Out','In hand')}${modes.map(m=>{const x=M[m]||{i:0,o:0},a=A[m]||{i:0,o:0};return`<tr><td>${esc(m)}</td><td ${R}>${money(x.i)}</td><td ${R}>${money(x.o)}</td><td ${R}><b class="${col(a.i-a.o)}">${money(a.i-a.o)}</b></td></tr>`}).join('')||'<tr><td colspan="4" class="m">No transactions yet</td></tr>'}
+ ${modes.length?`<tr class="t"><td><b>Total</b></td><td ${R}><b>${money(T.i)}</b></td><td ${R}><b>${money(T.o)}</b></td><td ${R}><b>${money(T.h)}</b></td></tr>`:''}</table>
+ ${Math.abs(gN)>0.004?`<p class="m">Of the money in hand, ₹${money(gN)} is GST you owe the government (collected ₹${money(gO)} less credit ₹${money(gI)}). Your own money: ₹${money(T.h-gN)}.</p>`:''}</div>
+ <div class="sec">Stock in hand <span class="m">at purchase price, excluding GST</span></div>
+ <div class="c"><table class="tbl">${th('Item','In stock','Value')}${SK.map((r,k)=>`<tr${k>=5?' class="xr" style="display:none"':''}><td>${esc(r.n)}</td><td ${R}>${r.q}</td><td ${R}>${money(r.v)}</td></tr>`).join('')||'<tr><td colspan="3" class="m">No stock with a purchase price</td></tr>'}${xb(SK.length-5,3)}
+ ${SK.length?`<tr class="t"><td><b>Total</b></td><td></td><td ${R}><b>${money(sv)}</b></td></tr>`:''}</table></div>`}
 
 /* ---------- UI v5: reliable back, one-page sale, pack units, search, print/share everywhere ---------- */
 const plr=n=>/(s|x|ch|sh)$/i.test(n)?n+'es':n+'s',tm=t=>new Date(t).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),p2=n=>String(n).padStart(2,'0'),fq=n=>String(Math.round(n*1000)/1000);
