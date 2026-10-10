@@ -56,7 +56,7 @@ body.kb nav{display:none}body.kb .bar{bottom:var(--kbh,0px);padding-top:6px;padd
 html{scroll-padding-bottom:110px}
 .frow{display:flex;gap:8px;width:100%}.c.ok{background:rgba(27,138,75,.12);color:var(--grn);border-color:var(--grn);font-weight:600}
 .fa{flex:1;min-width:0;background:none;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:3px;padding:2px 0;font-size:11px;font-weight:600}.fa svg{width:46px;height:46px;padding:11px;border-radius:50%;background:var(--g2);color:var(--g)}.fa.p svg{background:var(--g);color:#fff}.fa.gr svg{background:var(--grn);color:#fff}.fa.rd svg{background:rgba(217,54,54,.12);color:var(--red)}
-.ics{display:flex;gap:8px}.line>.ib{width:40px;height:40px}.lnk{background:none;color:var(--g);padding:4px 6px;font-weight:700}
+.ics{display:flex;gap:12px}.topr{margin:2px 0 12px}.line>.ib{width:40px;height:40px}.lnk{background:none;color:var(--g);padding:4px 6px;font-weight:700}
 .av.tx{border-radius:50%}.av.tx.in{background:rgba(23,128,63,.12);color:var(--grn)}.av.tx.out{background:rgba(217,54,54,.1);color:var(--red)}
 .pl{width:100%;border-collapse:collapse}.pl td{padding:8px 2px}.pl td:last-child{text-align:right;font-weight:600;white-space:nowrap}.pl .sub{padding-left:12px;color:var(--mut);font-weight:400}.pl .t td{border-top:1px solid var(--line);font-weight:700}.pl .big td{border-top:2px solid var(--ink);font-size:19px;font-weight:700;padding-top:12px}.pl .hd{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);padding-top:14px;text-align:left}
 .gst .tbl th,.gst .tbl td{padding:5px 2px}.gst .gt td{border-top:1px solid var(--line);font-weight:700}
@@ -149,8 +149,8 @@ function payReceipt(y,pay){const p=db.parties.find(x=>x.id==y.pid)||{name:''},L=
  o.push('-'.repeat(W),c('PAYMENT RECEIPT'),lr('Receipt '+(y.no||''),new Date(y.t).toLocaleDateString('en-IN')),'Received from: '+p.name,'-'.repeat(W),lr('Amount Rs',money(y.amt)),lr('Mode',y.mode||'Cash'));
  if(L)o.push(L.bal>0.005?lr('Balance due',money(L.bal)):L.bal<-0.005?lr('Advance',money(-L.bal)):lr('Balance','Nil'));
  if(pay)o.push(...payLines(pay));o.push('-'.repeat(W),c('Thank you!'),'','','');return o.join('\n')}
-function billMsg(b){const s=db.shop,L=b.pid&&ledger(b.pid).find(x=>x.k=='b'&&x.r.id==b.id),d=dueOf(b),bp=billPay(b),ps=bp?payShort(bp.only):'',pu=ps?(bp.cur?'Your current balance ₹':'Amount to pay ₹')+money(bp.amt)+'\n'+ps:'';
- return s.name+'\nBill '+b.no+' · '+new Date(b.t).toLocaleDateString('en-IN')+'\nTotal ₹'+money(b.total)+' · Paid ₹'+money(b.paid??b.total)+(d>0.005?'\nDue ₹'+money(d)+(L&&L.bal>d+0.005?' (total pending ₹'+money(L.bal)+')':''):'')+(pu?'\n'+pu:'')+'\nThank you!'}
+function billMsg(b){const s=db.shop,L=b.pid&&ledger(b.pid).find(x=>x.k=='b'&&x.r.id==b.id),d=dueOf(b),pp=b.pid&&db.parties.find(x=>x.id==b.pid),cb=pp?pp.bal:0,du=Math.min(d,cb),bp=billPay(b),ps=bp?payShort(bp.only):'',pu=ps?(bp.cur?'Your current balance ₹':'Amount to pay ₹')+money(bp.amt)+'\n'+ps:'';
+ return s.name+'\nBill '+b.no+' · '+new Date(b.t).toLocaleDateString('en-IN')+'\nTotal ₹'+money(b.total)+' · Paid ₹'+money(b.paid??b.total)+(du>0.005?'\nDue ₹'+money(du)+(cb>du+0.005?' (total pending ₹'+money(cb)+')':''):'')+(pu?'\n'+pu:'')+'\nThank you!'}
 function payMsg(y){const s=db.shop,L=ledger(y.pid).find(x=>x.k=='p'&&x.r.id==y.id),due=L&&L.bal>0.005,cb=(db.parties.find(x=>x.id==y.pid)||{}).bal,pu=due&&cb>0.005?payShort():'';
  return s.name+'\nPayment received: ₹'+money(y.amt)+' ('+(y.mode||'Cash')+')\nDate: '+new Date(y.t).toLocaleDateString('en-IN')+(y.no?'\nReceipt: '+y.no:'')+'\n'+(due?'Balance due: ₹'+money(L.bal)+(pu?'\n'+pu:''):'Your account is settled')+'\nThank you!'}
 function spayMsg(y){const s=db.shop,L=sledger(y.sid).find(x=>x.k=='y'&&x.r.id==y.id);
@@ -203,19 +203,20 @@ function docPages(o,pay){
     if(ql){const qy=y+(payH-qs-30)/2;QR.draw(g,pay.qr,M+CW-qs-24,qy,qs,k);g.font=F(13);g.fillStyle=C.mut;g.textAlign='center';g.fillText('Scan with any UPI app',M+CW-qs/2-24,qy+qs+22)}y+=payH}
    y+=34;g.textAlign='center';g.font=F(16);g.fillStyle='#8a97a8';g.fillText('Thank you for your business!',Wd/2,y)}
   return c})}
-async function shareDoc(o,name,mode,on){if(!mode){_sd={o,name};sheetPay('Share image',[['share','Share',"shareDoc(_sd.o,_sd.name,1,pinc())"],['down','Save to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"]],o);return}
- const cs=docPages(o,payInfo(o.payAmt,o.payRef,on,o.payOnly,o.payCur)),fs=[];
+function docMsg(o){const s=db.shop,L=[s.name||'',o.title||''];(o.meta||[]).forEach(r=>{if(r[1])L.push(r[0]+': '+r[1])});(o.sums||[]).forEach(r=>L.push(r[0]+': '+r[1]));L.push('Thank you!');return L.filter(x=>x).join('\n')}
+const shItems=()=>[['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','WhatsApp',"shareDoc(_sd.o,_sd.name,1,pinc())"],['sms','Short message by SMS',"sendTo(_sd.pid,_sd.msg,'sms',_sd.kind)"]];
+async function shareDoc(o,name,mode,on,ctx){const c=ctx||(_sd&&_sd.o===o?_sd:{});
+ if(!mode){_sd={o,name,msg:c.msg||docMsg(o),pid:c.pid,kind:c.kind,pr:c.pr};sheetPay('Share',shItems(),o);return}
+ const cs=docPages(o,payInfo(o.payAmt,o.payRef,on,o.payOnly,o.payCur)),fs=[],tx=c.msg||docMsg(o);
  for(let p=0;p<cs.length;p++){const bl=await new Promise(r=>cs[p].toBlob(r,'image/jpeg',.85));fs.push(new File([bl],name+(cs.length>1?'-'+(p+1):'')+'.jpg',{type:'image/jpeg'}))}
- if(mode!=2){try{if(navigator.canShare&&navigator.canShare({files:fs})){await navigator.share({files:fs,title:name});return}}catch(e){if(e.name=='AbortError')return}}
- fs.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click()});toast('Image saved to your downloads')}
-function shareBill(id){const b=db.bills.find(x=>x.id==id);if(b)shareDoc(billDoc(b),'Bill-'+b.no)}
-function sharePay(id){const y=db.pays.find(x=>x.id==id);if(y)shareDoc(payDoc(y),'Receipt-'+(y.no||'payment'))}
+ if(mode!=2){try{if(navigator.canShare&&navigator.canShare({files:fs})){await navigator.share({files:fs,text:tx});return}}catch(e){if(e.name=='AbortError')return}}
+ fs.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click()});
+ if(mode!=2){toast('Image saved. Attach it in WhatsApp');sendTo(c.pid,tx,'wa',c.kind)}else toast('Image saved to your downloads')}
 
-function sendBill(id,via){const b=db.bills.find(x=>x.id==id);if(b)sendTo(b.pid,billMsg(b),via,'c')}
-function sendPayReq(id){const b=db.bills.find(x=>x.id==id),bp=b&&billPay(b);if(bp)sendTo(b.pid,payReqMsg(bp.amt,bp.cur?'your current balance':'Bill '+b.no,bp.only),db.shop.via||'wa','c')}
-function sendPay(id,via){const y=db.pays.find(x=>x.id==id);if(y)sendTo(y.pid,payMsg(y),via,'c')}
-function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=via||db.shop.via||'wa';p.rem=Date.now();p.u=Date.now();save();
- const pu=payShort();sendTo(id,'Dear '+p.name+',\nThis is a gentle reminder that ₹'+money(p.bal)+' is pending at '+db.shop.name+'.'+(pu?'\n'+pu:'')+'\nPlease pay at your earliest convenience. Thank you.',via,'c');render()}
+function sendPayReq(id){const b=db.bills.find(x=>x.id==id),bp=b&&billPay(b);if(bp)shareDoc(billDoc(b),'Bill-'+b.no,1,true,{msg:payReqMsg(bp.amt,bp.cur?'your current balance':'Bill '+b.no,bp.only),pid:b.pid,kind:'c'})}
+const remText=p=>{const pu=payShort();return 'Dear '+p.name+',\nThis is a gentle reminder that ₹'+money(p.bal)+' is pending at '+db.shop.name+'.'+(pu?'\n'+pu:'')+'\nPlease pay at your earliest convenience. Thank you.'};
+function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=via||db.shop.via||'wa';p.rem=Date.now();p.u=Date.now();save();sendTo(id,remText(p),via,'c');render()}
+function remindImg(id){const p=db.parties.find(x=>x.id==id);if(!p)return;p.rem=Date.now();p.u=Date.now();save();shareDoc(ledgerDoc('c',id),'Statement-'+p.name.replace(/\W+/g,'_'),1,undefined,{msg:remText(p),pid:id,kind:'c'});render()}
 /* ---------- more ---------- */
 
 function exportItems(){const R=[['Name','Barcode','HSN','Unit','MRP','Selling price (incl. GST)','GST %','Stock','Last purchase rate','Reorder level'],...srt(db.items,'name').map(i=>[i.name,i.code,i.hsn||'',i.unit||'PCS',i.mrp,i.price,i.gst,i.stock,i.cost||'',i.min??5])];
@@ -359,7 +360,8 @@ function saveRet(refId,kind,eid){const src=kind=='c'?db.bills.find(x=>x.id==refI
 function noteDoc(n){return{title:n.kind=='c'?'CREDIT NOTE':'DEBIT NOTE',meta:[['Note no',n.no],['Date',new Date(n.t).toLocaleDateString('en-IN',{dateStyle:'medium'})],['Against invoice',n.rno],[n.kind=='c'?'Customer':'Supplier',n.pn],...(n.g?[['GSTIN',n.g]]:[]),['Settlement',n.refund=='cash'?'Cash refund':'Adjusted in account'],...(n.why?[['Reason',n.why]]:[])],
  cols:[{h:'Item',w:.30},{h:'HSN',w:.13},{h:'Qty',w:.09,al:'r'},{h:'Rate',w:.17,al:'r'},{h:'GST',w:.09,al:'r'},{h:'Amount',w:.22,al:'r'}],rows:n.lines.map(l=>[l.n,l.h||'',l.q,money(l.p),l.g+'%',money(n.kind=='c'?l.q*l.p:l.q*l.p*(1+l.g/100))]),
  sums:[['Taxable value','₹'+money(n.taxable)],...(n.ig?[['IGST','₹'+money(n.tax)]]:[['CGST','₹'+money(n.tax/2)],['SGST','₹'+money(n.tax/2)]]),...(n.ro?[['Round off',(n.ro>0?'+':'-')+money(Math.abs(n.ro))]]:[]),['Total','₹'+money(n.total),1]]}}
-function shareNote(id){const n=db.notes.find(x=>x.id==id);if(n)shareDoc(noteDoc(n),n.no)}
+function shareNote(id){const n=db.notes.find(x=>x.id==id);if(n)shareDoc(noteDoc(n),n.no,0,0,{pid:n.pid,kind:n.kind=='c'?'c':'s'})}
+function purchShare(id){const p=db.purch.find(x=>x.id==id);if(p)shareDoc(purchaseDoc(p),'Purchase-'+(p.no||''),0,0,{pid:p.sid,kind:'s'})}
 function sledger(id){const e=[...db.purch.filter(p=>p.sid==id&&!p.void).map(p=>({t:p.t,k:'p',r:p,d:p.total-p.paid,a:p.total})),...db.spays.filter(y=>y.sid==id&&!y.void).map(y=>({t:y.t,k:'y',r:y,d:-y.amt,a:-y.amt})),...db.notes.filter(n=>n.kind=='d'&&n.pid==id&&!n.void).map(n=>({t:n.t,k:'n',r:n,a:-n.total,d:n.refund=='credit'?-n.total:0}))].sort((x,y)=>x.t-y.t);let r=0;e.forEach(x=>{r=Math.round((r+x.d)*100)/100;x.bal=r});return e}
 function pcalc(){const sp=db.sups.find(x=>x.id==psup),ss=shopSt(),ps=sp?stOf(sp):'',ig=!comp()&&pgst!='n'&&!!ss&&!!ps&&ps!=ss;let tx=0,tax=0;
  const ls=pcart.map(l=>{const ge=(comp()||pgst=='n')?0:l.g,gr=Math.round(l.q/(l.ru||1)*l.r*100)/100,t=Math.round(gr*ge/(100+ge)*100)/100,a=Math.round((gr-t)*100)/100;tx+=a;tax+=t;return{...l,a,t}});return{ls,tx,tax,ig,pos:ps||ss,tot:Math.round((tx+tax)*100)/100,sp}}
@@ -497,7 +499,7 @@ function toast(m,bd){let t=$('#toast');if(!t){t=document.createElement('div');t.
 let pst=[];
 const ptitle=p=>typeof p.title=='function'?p.title():p.title;
 function pg(title,build,foot,rep){if(!$('#dlg').open)pst=[];if(rep)pst.pop();pst.push({title,build,foot});drawP(1);if(!$('#dlg').open)$('#dlg').showModal()}
-function drawP(top){const p=pst[pst.length-1];$('#ptitle').textContent=ptitle(p);const y=top?0:$('#dbody').scrollTop;$('#dbody').innerHTML=p.build();const f=p.foot?p.foot():'';$('#pfoot').innerHTML=f;$('#pfoot').style.display=f?'flex':'none';{const mv=[...$('#pfoot').querySelectorAll('[data-top]')];if(mv.length){const r=document.createElement('div');r.className='line sp';r.innerHTML='<span></span><span class="ics"></span>';mv.forEach(b=>r.lastChild.appendChild(b));$('#dbody').prepend(r)}}$('#dbody').scrollTop=y;syncHist()}
+function drawP(top){const p=pst[pst.length-1];$('#ptitle').textContent=ptitle(p);const y=top?0:$('#dbody').scrollTop;$('#dbody').innerHTML=p.build();const f=p.foot?p.foot():'';$('#pfoot').innerHTML=f;$('#pfoot').style.display=f?'flex':'none';{const mv=[...$('#pfoot').querySelectorAll('[data-top]')];if(mv.length){const r=document.createElement('div');r.className='line sp topr';r.innerHTML='<span></span><span class="ics"></span>';mv.forEach(b=>r.lastChild.appendChild(b));$('#dbody').prepend(r)}}$('#dbody').scrollTop=y;syncHist()}
 function pgRefresh(){if(pst.length)drawP(0)}
 function pgBack(){pst.pop();if(pst.length)drawP(1);else{$('#dlg').close();render()}}
 function pgClose(){pst=[];if($('#dlg').open)$('#dlg').close();render()}
@@ -588,7 +590,7 @@ function saveParty(id,sel){let nw=0;const n=$('#p1').value.trim();if(!n)return b
  const o={name:n,phone:$('#p2').value.trim(),gstin:g,state:g?g.slice(0,2):$('#p4').value,u:Date.now()};
  if(id)Object.assign(db.parties.find(x=>x.id==id),o);else{const p={id:nid(),bal:0,...o};db.parties.push(p);if(sel)bparty=p.id;nw=p.id}
  save();toast('Customer saved');if(sel)pgClose();else if(nw){render();partyView(nw,1,1)}else pgBack()}
-function partyShare(id){const p=db.parties.find(x=>x.id==id);if(!p)return;sheet(p.name,[...(p.bal>0.005?[['wa','Remind on WhatsApp',`remind(${id},'wa')`],['sms','Remind by SMS',`remind(${id},'sms')`]]:[]),['share','Image · share or save to gallery',`ledgerImg('c',${id})`]])}
+function partyShare(id){const p=db.parties.find(x=>x.id==id);if(!p)return;sheet(p.name,[...(p.bal>0.005?[['wa','Remind on WhatsApp · statement + message',`remindImg(${id})`],['sms','Remind by SMS',`remind(${id},'sms')`]]:[]),['share','Image · share or save to gallery',`ledgerImg('c',${id})`]])}
 
 function partyView(id,rep,fresh){const p0=db.parties.find(x=>x.id==id);if(!p0)return;
  pg(()=>(db.parties.find(x=>x.id==id)||p0).name,()=>{const p=db.parties.find(x=>x.id==id)||p0,owe=p.bal>0.005,st=lgEntries('c',id);
@@ -611,8 +613,8 @@ function supView(id,rep,fresh){const p0=db.sups.find(x=>x.id==id);if(!p0)return;
 function savePayS(id){const a=Math.round(+$('#ra').value*100)/100;if(!(a>0))return bad('#ra','Enter the amount paid');let y;{const t0=tOn($('#rd').value||today()),rf=(($('#rrf')||{}).value||'').trim(),sp=segVal('rm')=='Split'?spVals():[{m:segVal('rm')||'Cash',a}];if(!sp.length)return bad('#sp_Cash','Enter the split amounts');sp.forEach(x=>{y={id:uid(),sid:id,amt:x.a,mode:x.m,t:t0,...(rf?{ref:rf}:{})};db.spays.unshift(y)})}recalc();save();render();spayView(y.id,1,1);toast('Payment recorded')}
 function delSup(id,ok){const q=db.sups.find(x=>x.id==id);if(q&&Math.abs(q.bal)>=.005)return warn('Settle the balance before deleting this supplier.');if(!ok&&(ask('Delete this supplier? Past purchase bills keep the name.','Yes, delete',"delSup('"+id+"',1)"),1))return;db.sups=db.sups.filter(x=>x.id!=id);db.tomb[id]=Date.now();if(psup==id)psup='';save();toast('Supplier deleted');pgClose()}
 /* bill, receipt, purchase and note pages */
-function billShare(id){const b=db.bills.find(x=>x.id==id);if(!b)return;const o=billDoc(b),bp=billPay(b),dd=bp&&b.pid&&payAvail(bp.only);_sd={o,name:'Bill-'+b.no};
- sheetPay('Share this bill',[['share','Share as image',"shareDoc(_sd.o,_sd.name,1,pinc())"],['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','Short message on WhatsApp',`sendBill('${id}','wa')`],['sms','Short message by SMS',`sendBill('${id}','sms')`],...(dd?[[db.shop.via=='sms'?'sms':'wa','Send payment details only',`sendPayReq('${id}')`]]:[])],o)}
+function billShare(id){const b=db.bills.find(x=>x.id==id);if(!b)return;const o=billDoc(b),bp=billPay(b),dd=bp&&b.pid&&payAvail(bp.only);_sd={o,name:'Bill-'+b.no,msg:billMsg(b),pid:b.pid,kind:'c',pr:`printBill(db.bills.find(x=>x.id=='${id}'))`};
+ sheetPay('Share this bill',[...shItems(),...(dd?[['wa','Send payment details only',`sendPayReq('${id}')`]]:[])],o)}
 
 function billView(id,rep,fresh){const b0=db.bills.find(x=>x.id==id);if(!b0)return;
  pg(()=>'Bill '+b0.no,()=>{const b=db.bills.find(x=>x.id==id)||b0,s=db.shop,d=dueOf(b),ro=b.ro||0,L=b.pid&&!b.void&&ledger(b.pid).find(x=>x.k=='b'&&x.r.id==b.id);
@@ -623,10 +625,10 @@ function billView(id,rep,fresh){const b0=db.bills.find(x=>x.id==id);if(!b0)retur
   <div class="m">Paid ₹${money(b.paid??b.total)}${d>0.005?' · <span class="due">Due ₹'+money(d)+'</span>':''}${b.pm?' · '+b.pm.map(x=>esc(x.m)+' ₹'+money(x.a)).join(' + '):(b.mode?' · '+esc(b.mode):'')}</div>${billProfit(b)!=null&&!b.void?`<div class="m">Profit on this bill ${msk('₹'+money(billProfit(b))+' · cost ₹'+money(b.total-(b.ro||0)-b.tax-billProfit(b)))}</div>`:''}${L?`<div class="m">Previous balance ₹${money(L.pre)} · New balance <b>₹${money(L.bal)}</b></div>`:''}</div>`},
   ()=>{const b=db.bills.find(x=>x.id==id)||b0,dl=`delRec('bills','${id}','bill')`,ed=b.void?'':B.edit(`editBill('${id}')`);return (b.void?'':B.doc(`billShare('${id}')`,`printBill(db.bills.find(x=>x.id=='${id}'))`))+(fresh?ed+B.del(dl)+B.nw('newSale()')+B.close('pgClose()'):ed+B.more([...(b.void?[]:[['undo','Return',`retForm('${id}','c')`],['x','Cancel',`voidBill('${id}')`,'rd']]),['del','Delete',dl,'rd']])+B.nw('newSale()')+B.close())},rep)}
 function voidBill(id,ok){const b=db.bills.find(x=>x.id==id);if(b&&!b.void&&db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first.');if(!b||b.void||!ok&&(ask('Cancel Bill '+b.no+'? Stock and the customer balance will be restored.','Yes, cancel',"voidBill('"+id+"',1)"),1))return;b.void=true;b.vt=Date.now();b.u=Date.now();recalc();save();render();pgRefresh();toast('Bill cancelled')}
-function paySheet(id){const y=db.pays.find(x=>x.id==id);if(!y)return;const o=payDoc(y);_sd={o,name:'Receipt-'+(y.no||'payment')};
- sheetPay('Share receipt',[['share','Share as image',"shareDoc(_sd.o,_sd.name,1,pinc())"],['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','Short message on WhatsApp',`sendPay('${id}','wa')`],['sms','Short message by SMS',`sendPay('${id}','sms')`]],o)}
-function spayShare(id){const y=db.spays.find(x=>x.id==id);if(!y)return;const p=db.sups.find(x=>x.id==y.sid)||{name:''};_sd={o:spayDoc(y),name:'Payment-'+p.name.replace(/\W+/g,'_')};
- sheet('Share payment',[['share','Share as image',"shareDoc(_sd.o,_sd.name,1)"],['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2)"],['wa','Short message on WhatsApp',`sendTo('${y.sid}',spayMsg(db.spays.find(x=>x.id=='${id}')),'wa','s')`],['sms','Short message by SMS',`sendTo('${y.sid}',spayMsg(db.spays.find(x=>x.id=='${id}')),'sms','s')`]])}
+function paySheet(id){const y=db.pays.find(x=>x.id==id);if(!y)return;const o=payDoc(y);_sd={o,name:'Receipt-'+(y.no||'payment'),msg:payMsg(y),pid:y.pid,kind:'c',pr:`printPay('${id}')`};
+ sheetPay('Share receipt',shItems(),o)}
+function spayShare(id){const y=db.spays.find(x=>x.id==id);if(!y)return;const p=db.sups.find(x=>x.id==y.sid)||{name:''};_sd={o:spayDoc(y),name:'Payment-'+p.name.replace(/\W+/g,'_'),msg:spayMsg(y),pid:y.sid,kind:'s'};
+ sheet('Share payment',shItems())}
 function payView(id,rep,fresh){const y0=db.pays.find(x=>x.id==id);if(!y0)return;
  pg('Payment receipt',()=>{const y=db.pays.find(x=>x.id==id)||y0,p=db.parties.find(x=>x.id==y.pid)||{name:''},L=ledger(y.pid).find(x=>x.k=='p'&&x.r.id==y.id),s=db.shop;
   return `${y.void?'<div class="c bad">This payment is cancelled</div>':fresh?'<div class="c ok">✔ Payment saved</div>':''}<div class="c"><div class="ctr"><b>${esc(s.name)}</b><div class="m">Receipt ${esc(y.no||'')}</div></div><div class="m" style="margin-top:12px">Received from</div><b>${esc(p.name)}</b><div class="bal rcv">₹${money(y.amt)}</div><div class="m">${new Date(y.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})} · ${esc(y.mode||'Cash')}</div>${L?`<div class="m" style="margin-top:6px">${L.bal>0.005?'Balance due':'Balance'} <b>₹${money(Math.max(0,L.bal))}</b>${L.bal<-0.005?' · advance ₹'+money(-L.bal):''}</div>`:''}</div>`},
@@ -637,7 +639,7 @@ function pView(id,rep,fresh){const p0=db.purch.find(x=>x.id==id);if(!p0)return;
   return `${p.void?'<div class="c bad">This purchase is cancelled</div>':fresh?'<div class="c ok">✔ Purchase '+esc(p.no)+' saved</div>':''}<div class="c"><b>${esc(p.sn)}</b><div class="m">${p.sg?esc(p.sg)+' · ':''}${new Date(p.t).toLocaleDateString('en-IN',{dateStyle:'medium'})} · Invoice ${esc(p.no)}${p.ng?' · No GST':''}</div>
   <table class="tbl" style="margin-top:8px"><tr><th>Item</th><th>Qty</th><th>Rate</th><th>GST</th><th>Amount</th></tr>${p.lines.map(l=>`<tr><td>${esc(l.n)}</td><td>${qtxt(l)}</td><td>${rtxt(l)}</td><td>${l.g}%</td><td>${money(l.q*l.r*(1+l.g/100))}</td></tr>`).join('')}</table>
   <div class="m" style="margin-top:8px">Taxable ${money(p.taxable)} · ${p.ig?'IGST '+money(p.tax):'CGST '+money(p.tax/2)+' · SGST '+money(p.tax/2)}</div><div class="line sp"><b>Total</b><span class="tt">₹${money(p.total)}</span></div><div class="m">Paid ₹${money(p.paid)}${d>0.005?' · <span class="due">Due ₹'+money(d)+'</span>':''}${p.pm?' · '+p.pm.map(x=>esc(x.m)+' ₹'+money(x.a)).join(' + '):(p.mode?' · '+esc(p.mode):'')}</div></div>`},
-  ()=>{const p=db.purch.find(x=>x.id==id)||p0,dl=`delRec('purch','${id}','purchase')`,ed=p.void?'':B.edit(`editP('${id}')`);return B.doc(`shareDoc(purchaseDoc(db.purch.find(x=>x.id=='${id}')),'Purchase')`,`printSpec(purchaseDoc(db.purch.find(x=>x.id=='${id}')))`)+(fresh?ed+B.del(dl)+B.nw('pgClose();newPurch()')+B.close('pgClose()'):ed+B.more([...(p.void?[]:[['undo','Return',`retForm('${id}','d')`],['x','Cancel',`voidP('${id}')`,'rd']]),['del','Delete',dl,'rd']])+B.nw('pgClose();newPurch()')+B.close())},rep)}
+  ()=>{const p=db.purch.find(x=>x.id==id)||p0,dl=`delRec('purch','${id}','purchase')`,ed=p.void?'':B.edit(`editP('${id}')`);return B.doc(`purchShare('${id}')`,`printSpec(purchaseDoc(db.purch.find(x=>x.id=='${id}')))`)+(fresh?ed+B.del(dl)+B.nw('pgClose();newPurch()')+B.close('pgClose()'):ed+B.more([...(p.void?[]:[['undo','Return',`retForm('${id}','d')`],['x','Cancel',`voidP('${id}')`,'rd']]),['del','Delete',dl,'rd']])+B.nw('pgClose();newPurch()')+B.close())},rep)}
 function voidP(id,ok){const p=db.purch.find(x=>x.id==id);if(p&&!p.void&&db.notes.some(n=>!n.void&&n.ref==id))return warn('This purchase has a return. Cancel the debit note first.');if(!p||p.void||!ok&&(ask('Cancel this purchase? Stock and the supplier balance will be reversed.','Yes, cancel',"voidP('"+id+"',1)"),1))return;p.void=true;p.vt=Date.now();p.u=Date.now();const rp=syncCosts(p.lines.map(l=>l.id));recalc();save();render();pgRefresh();toast('Purchase cancelled'+(rp?' · selling price restored for '+rp+' item'+(rp==1?'':'s'):''))}
 function noteView(id,rep,fresh){const n0=db.notes.find(x=>x.id==id);if(!n0)return;
  pg(()=>(n0.kind=='c'?'Credit note ':'Debit note ')+n0.no,()=>{const n=db.notes.find(x=>x.id==id)||n0;
@@ -686,15 +688,15 @@ function ledgerText(kind,id,pay){const p=lgOwner(kind,id),A=lgRows(kind,id),{R,s
  o.push('-'.repeat(W),lr(lgLabel(kind,p)+' Rs',money(Math.abs(p.bal))));if(pay)o.push(...payLines(pay));o.push('','','');return o.join('\n')}
 function ledgerPrint(kind,id){pickPrint(ledgerDoc(kind,id),pay=>ledgerText(kind,id,pay))}
 
-function ledgerImg(kind,id){const p=lgOwner(kind,id);shareDoc(ledgerDoc(kind,id),'Statement-'+p.name.replace(/\W+/g,'_'))}
+function ledgerImg(kind,id){const p=lgOwner(kind,id);shareDoc(ledgerDoc(kind,id),'Statement-'+p.name.replace(/\W+/g,'_'),0,0,{pid:id,kind,pr:`ledgerPrint('${kind}',${id})`})}
 const lgBtns=(kind,id)=>`<span class="ics"><button class="ib" aria-label="Image · share or save to gallery" onclick="ledgerImg('${kind}',${id})">${ic('share')}</button><button class="ib" aria-label="Print statement" onclick="ledgerPrint('${kind}',${id})">${ic('print')}</button></span>`;
 /* estimates */
 function nextEstNo(){const P='E'+DEV;let m=0;db.est.forEach(e=>{const x=String(e.no);if(x.startsWith(P)&&/^\d+$/.test(x.slice(P.length)))m=Math.max(m,+x.slice(P.length))});return P+(m+1)}
 function newEst(){if(editId||estId||editEstId||!isEst)resetSale();closeAll();isEst=true;tab='bill';render()}
 function estMsg(e){const s=db.shop,n=e.lines.length;return s.name+'\nEstimate '+e.no+' · '+new Date(e.t).toLocaleDateString('en-IN')+'\n'+n+' item'+(n==1?'':'s')+' · Total ₹'+money(e.total)+' (GST included)\nThank you!'}
 function estDoc(e){return{title:'ESTIMATE',meta:[['Estimate no',e.no],['Date',new Date(e.t).toLocaleDateString('en-IN',{dateStyle:'medium'})],['Customer',e.cust||'Walk-in']],cols:[{h:'Item',w:.40},{h:'Qty',w:.12,al:'r'},{h:'Rate',w:.22,al:'r'},{h:'Amount',w:.26,al:'r'}],rows:e.lines.map(l=>[l.n,qtxt(l),rateTxt(l),money(lgross(l))]),sums:[...(billDisc(e)>0.004?[['Discount','−₹'+money(billDisc(e))]]:[]),['Total (GST included)','₹'+money(e.total),1]]}}
-function estShare(id){const e=db.est.find(x=>x.id==id);if(!e)return;_sd={o:estDoc(e),name:'Estimate-'+e.no};
- sheet('Share estimate',[['share','Share as image',"shareDoc(_sd.o,_sd.name,1)"],['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2)"],['wa','Short message on WhatsApp',`sendTo(db.est.find(x=>x.id=='${id}').pid,estMsg(db.est.find(x=>x.id=='${id}')),'wa','c')`],['sms','Short message by SMS',`sendTo(db.est.find(x=>x.id=='${id}').pid,estMsg(db.est.find(x=>x.id=='${id}')),'sms','c')`]])}
+function estShare(id){const e=db.est.find(x=>x.id==id);if(!e)return;_sd={o:estDoc(e),name:'Estimate-'+e.no,msg:estMsg(e),pid:e.pid,kind:'c'};
+ sheet('Share estimate',shItems())}
 function estView(id,rep,fresh){const e0=db.est.find(x=>x.id==id);if(!e0)return;
  pg(()=>'Estimate '+e0.no,()=>{const e=db.est.find(x=>x.id==id)||e0;return `${e.void?'<div class="c bad">This estimate is cancelled</div>':fresh?'<div class="c ok">✔ Estimate '+esc(e.no)+' saved</div>':e.status=='converted'?'<div class="c">Billed as '+esc(e.bill||'')+'</div>':''}<div class="c"><b>${esc(e.cust||'Walk-in customer')}</b><div class="m">${new Date(e.t).toLocaleDateString('en-IN',{dateStyle:'medium'})}</div>
   <table class="tbl" style="margin-top:8px"><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${e.lines.map(l=>`<tr><td>${esc(l.n)}${l.d>0?`<br><span class="m rcv">discount −₹${money(l.d)}</span>`:''}</td><td>${qtxt(l)}</td><td>${rateTxt(l)}</td><td>${money(lgross(l))}</td></tr>`).join('')}</table>
@@ -784,8 +786,8 @@ function costing(){const ev=[],bill={},miss=new Set();
   else if(e.n){if(e.n.kind=='d'){const sp=db.purch.find(x=>x.id==e.n.ref),cl=sp&&!sp.ng&&!comp()&&gstinOk(sp.sg);e.n.lines.forEach(l=>{const s=st(l.id),a=sp?l.p*(cl?1:1+(l.g||0)/100):(avg(l.id)??c0(l.id));s.q-=l.q;s.v-=a*l.q;{const x=sx(l.id),ax=sp?l.p:(xa(l.id)??c0(l.id));x.q-=l.q;x.v-=ax*l.q}})}
    else if(e.n.rs!==false){const sb=db.bills.find(x=>x.id==e.n.ref),src=sb&&bill[sb.id];e.n.lines.forEach(l=>{const s=st(l.id),i=sb?sb.lines.findIndex(x=>x.id==l.id):-1,c=(i>=0&&src&&sb.lines[i].q>0)?src[i]/sb.lines[i].q:c0(l.id);s.q+=l.q;s.v+=c*l.q;{const x=sx(l.id);x.q+=l.q;x.v+=(xa(l.id)??c0(l.id))*l.q}})}}});
  return{bill,miss,S,X,lcx}}
-/* Cost of an item = weighted average of the stock on hand and every purchase, recomputed from history.
-   Selling prices follow the saved margins, so cancelling or deleting a purchase puts cost and prices back. */
+/* Item cost (and so the selling price) = weighted average of the stock on hand and the purchases, recomputed from history.
+   Cancelling or deleting a purchase recomputes it and the saved margins put the prices back. */
 function wacOf(C,id){const x=C.X[id];if(x&&x.q>0.0001&&x.v>0)return x.v/x.q;return C.lcx[id]>0?C.lcx[id]:0}
 function applyCost(i,nc){const oc=+i.cost||0;if(!(nc>0))return 0;const dif=oc>0?Math.abs(nc-oc)>1e-6*oc:true;i.cost=nc;if(!dif)return 0;i.u=Date.now();
  const pq=+i.pq>1?+i.pq:0,gm=comp()?1:1+(i.gst??5)/100;
@@ -815,6 +817,7 @@ function vProfit(){const bs=db.bills.filter(b=>!b.void&&inPer(b)),ns=db.notes.fi
   tile=(l,v,c,sub)=>`<div class="c" style="padding:10px 8px;margin:0;min-width:0"><div class="m">${l}</div><b class="${c||''}" style="font-size:16px;display:block;overflow-wrap:anywhere">₹${money(v)}</b><div class="m" style="font-size:11px">${sub||'&nbsp;'}</div></div>`,
   loss=IR.filter(r=>r.s-r.c<-0.004).length,
   SK=db.items.filter(i=>iv(i)>0).map(i=>({n:i.name,q:stkLong(i),v:iv(i)})).sort((a,b)=>b.v-a.v);
+
  return `<div class="line sp" style="margin-top:6px"><span></span>${perSel()}</div>
  ${no.size?`<div class="c bad" style="margin-top:10px">${no.size} item(s) sold have no purchase price yet, so profit looks higher than it is: ${esc([...no].slice(0,4).join(', '))}. Add their purchase price in Items.</div>`:''}
  <div class="g3" style="margin-top:10px">${tile('Net profit',np,col(np),PN2[per]+' · '+pc(np,net))}${tile('Money in hand',T.h,col(T.h),'after GST ₹'+money(T.h-gN))}${tile('Stock value',sv,'','right now')}</div>
@@ -940,7 +943,6 @@ function psave(){const P=pcalc(),pe=pEditId&&db.purch.find(x=>x.id==pEditId);if(
  if(extra>0)db.spays.unshift({id:uid(),sid:P.sp.id,amt:extra,mode:pmode=='Split'?'Cash':pmode,t:b.t,adv:1,bill:b.id,note:'Advance with invoice '+b.no});
  pcart=[];pno='';psup='';ppay='full';precv='';pmode='Cash';psp=blankSp();pgst='y';recalc();save();tab='reports';rpt='t';txF='purch';render();toast((pe?'Purchase updated':'Purchase saved')+(extra>0?' · advance ₹'+money(extra)+' kept':'')+(rp?' · selling price updated for '+rp+' item'+(rp==1?'':'s'):''));pView((pe||b).id,0,1)}
 /* ---- items: pieces, boxes and clearer stock ---- */
-let itLast='p',itLb='p';
 function itCalc(s){const g=k=>(($('#'+k)||{}).value||''),v=k=>+g(k)||0,set=(k,x,d)=>{const e=$('#'+k);if(e&&k!=({m:'f17',p:'f4',bm:'f18',bp:'f16'})[s])e.value=isFinite(x)?+x.toFixed(d):''},pq=v('f15')>1?Math.round(v('f15')):0,bi=segVal('qus'),box=pq&&bi&&bi!='Pieces',cp=v('f11')/(box?pq:1);
  if(cp>0){
   if(s=='c'||s=='m'||s=='p'){if(s!='p'&&g('f17')!=='')set('f4',cp*(1+v('f17')/100),2);else if(s!='m'&&v('f4')>0)set('f17',(v('f4')/cp-1)*100,2)}
@@ -954,7 +956,7 @@ function packUi(cv){const q=Math.round(+((($('#f15')||{}).value))||0),pn=puName(
  ['qwrap','bxb','kbw'].forEach(x=>$('#'+x).style.display=on?'block':'none');s.children[0].textContent=plr(pn);$('#kbl').textContent=plr(pn);
  const f=$('#f11');if(cv&&f&&+f.value>0&&bx!=itB)f.value=+(+f.value/(itB?q:1)*(bx?q:1)).toFixed(2);itB=bx;
  const l=$('#pcl');if(l)l.textContent='Purchase price (₹, incl. GST) per '+(bx?pn.toLowerCase():'piece')+' *';itCalc('c')}
-function itemForm(id,code,nm,pm){const i=db.items.find(x=>x.id==id)||{name:nm||'',code:code||'',mrp:'',price:'',gst:(pm&&pgst=='n')?0:5,stock:0,cost:''},gs=[...SLABS,...(SLABS.includes(+i.gst)?[]:[+i.gst])],pq=+i.pq>1?+i.pq:'',PU=['Box','Carton','Case','Dozen','Pair','Pack','Packet','Pouch','Bag','Sack','Bundle','Crate','Tray','Bottle','Jar','Tin','Strip','Roll','Set','Other…'],kn=PU.includes(i.pu||'Box'),cu=kn?'':(i.pu||'');itLast='p';itLb='p';itPk=!!pq;
+function itemForm(id,code,nm,pm){const i=db.items.find(x=>x.id==id)||{name:nm||'',code:code||'',mrp:'',price:'',gst:(pm&&pgst=='n')?0:5,stock:0,cost:''},gs=[...SLABS,...(SLABS.includes(+i.gst)?[]:[+i.gst])],pq=+i.pq>1?+i.pq:'',PU=['Box','Carton','Case','Dozen','Pair','Pack','Packet','Pouch','Bag','Sack','Bundle','Crate','Tray','Bottle','Jar','Tin','Strip','Roll','Set','Other…'],kn=PU.includes(i.pu||'Box'),cu=kn?'':(i.pu||'');itPk=!!pq;
  const bx=!!pq&&i.bi=='box',cpp=i.cost>0?i.cost*(comp()?1:1+i.gst/100):0,ci=cpp?+(cpp*(bx?pq:1)).toFixed(2):'',mg=i.mg!=null?i.mg:(cpp&&i.price>0?+((i.price/cpp-1)*100).toFixed(2):''),bm=i.bmg!=null?i.bmg:(cpp&&pq&&i.pp>0?+((i.pp/(cpp*pq)-1)*100).toFixed(2):''),qb=pm?'Quantity bought *':id?'Stock on hand':'Opening stock';
  pg(id?'Edit item':'New item',()=>`
  ${fld('Item name *',`<input id="f1" value="${esc(i.name)}" placeholder="e.g. Surf Excel 1 kg" autocomplete="off" autocapitalize="words">`)}
@@ -1021,7 +1023,8 @@ function txnAll(){const T=[],nm=id=>((db.parties.find(p=>p.id==id)||db.sups.find
  return T.sort((a,b)=>b.t-a.t)}
 const txnRow=x=>`<div class="card line tap ${x.v?'vd':''}" onclick="${x.go}"><div class="av tx ${x.io}">${ic(TI[x.k]||'doc')}</div><div class="gr"><b>${esc(x.ti)}</b><span class="m">${x.ty} · ${dt(x.t)}, ${tm(x.t)}${x.st?' · '+esc(x.st):''}</span></div><div class="amt ${x.io=='in'?'rcv':x.io=='out'?'due':''}">${x.io=='in'?'+':x.io=='out'?'−':''}₹${money(x.a)}</div></div>`;
 let txQ='';
-function txnList(){const f=txF,q=txQ.trim().toLowerCase(),L=txnAll().filter(x=>inPer(x)&&(f=='all'||(f=='sales'&&x.k=='sale')||(f=='purch'&&x.k=='purch')||(f=='in'&&x.k=='pin')||(f=='out'&&x.k=='pout')||(f=='exp'&&x.k=='exp')||(f=='ret'&&(x.k=='cn'||x.k=='dn'))||(f=='est'&&x.k=='est'))&&(!q||(x.ti+' '+x.ty+' '+x.st+' '+money(x.a)).toLowerCase().includes(q))),sum=k=>L.filter(x=>x.k==k&&!x.v).reduce((s,x)=>s+x.a,0);
+function txnFilt(){const f=txF,q=txQ.trim().toLowerCase();return txnAll().filter(x=>inPer(x)&&(f=='all'||(f=='sales'&&x.k=='sale')||(f=='purch'&&x.k=='purch')||(f=='in'&&x.k=='pin')||(f=='out'&&x.k=='pout')||(f=='exp'&&x.k=='exp')||(f=='ret'&&(x.k=='cn'||x.k=='dn'))||(f=='est'&&x.k=='est'))&&(!q||(x.ti+' '+x.ty+' '+x.st+' '+money(x.a)).toLowerCase().includes(q)))}
+function txnList(){const f=txF,q=txQ.trim().toLowerCase(),L=txnFilt(),sum=k=>L.filter(x=>x.k==k&&!x.v).reduce((s,x)=>s+x.a,0);
  return `<div class="stats"><div class="card"><span class="m">Sales</span><div class="tt rcv">₹${money(sum('sale'))}</div></div><div class="card"><span class="m">Purchases + expenses</span><div class="tt due">₹${money(sum('purch')+sum('exp'))}</div></div></div><div class="sec">${L.length} transaction${L.length==1?'':'s'}</div>${L.slice(0,200).map(txnRow).join('')||'<div class="empty"><b>No transactions</b><span class="m">Nothing matches. Try another period, filter or search.</span></div>'}`}
 function txnAdd(){sheet('Add',[['bag','New sale','newSale()'],['box','New purchase','newPurch()'],['down','Receive money','recvPick()'],['up','Pay supplier','paySPick()'],['coin','Add expense','expForm()'],['doc','New estimate','newEst()']])}
 function vTxns(){return `<div class="sb"><input placeholder="Search by name, number or amount" value="${esc(txQ)}" oninput="txQ=this.value;$('#txl').innerHTML=txnList()" autocomplete="off"><button class="ib p" onclick="txnAdd()" aria-label="Add transaction">${ic('plus')}</button></div>${perSel()}<div class="chips" style="margin-top:8px">${[['all','All'],['sales','Sales'],['purch','Purchases'],['in','Money in'],['out','Money out'],['exp','Expenses'],['ret','Returns'],['est','Estimates']].map(([k,l])=>`<button class="chip ${txF==k?'on':''}" onclick="txF='${k}';render()">${l}</button>`).join('')}</div><div id="txl">${txnList()}</div>`}
