@@ -396,7 +396,7 @@ function pickPrint(o,tf,b){_pp={o,tf,b};const d=db.shop.ptype=='normal'?'normal'
 async function runPrint(kind,on){W=thW();const {o,tf,b}=_pp,includeCurrent=on===true,doc=b?billDoc(b,includeCurrent):o,pay=payInfo(doc.payAmt,doc.payRef,on,doc.payCur,doc.payDue);if(kind=='normal')return printNormal(doc,pay);return printText(tf(pay,includeCurrent)+(doc.barcode?'\n\u0001BC\u0001'+doc.barcode:''),pay&&pay.qr)}
 async function printText(t,G){const enc=x=>new TextEncoder().encode(x.replace(/[^\x20-\x7e\n]/g,'?')),bcParts=t.split('\u0001BC\u0001'),barcode=bcParts.length>1?bcParts.pop().trim():'',body=bcParts.join('\u0001BC\u0001'),parts=body.split('\u0001QR\u0001'),seg=[new Uint8Array(thW()==42?[0x1b,0x40,0x1b,0x4d,0x01]:[0x1b,0x40])];
 parts.forEach((p,i)=>{seg.push(enc(i===parts.length-1?p.replace(/\n+$/,''):p));if(i<parts.length-1&&G){const m=G.length+8;seg.push(QR.raster(G,Math.max(2,Math.min(Math.floor(300/m),Math.floor(384/m))),384))}});
-if(barcode){seg.push(new Uint8Array([0x1b,0x61,0x01]),TxEAN13.raster(barcode,320,80),enc('\n'+barcode+'\n'),new Uint8Array([0x1b,0x61,0x00]))}
+if(barcode){seg.push(enc('\n'),new Uint8Array([0x1b,0x61,0x01]),TxEAN13.raster(barcode,320,80),enc('\n'+barcode+'\n\n'),new Uint8Array([0x1b,0x61,0x00]))}
 const by=new Uint8Array(seg.reduce((a,x)=>a+x.length,0));let off=0;seg.forEach(x=>{by.set(x,off);off+=x.length});
  try{if(!navigator.bluetooth)throw 0;if(!pc)await connectPrinter();if(!pc)throw 0;
   for(let i=0;i<by.length;i+=100){const ch=by.slice(i,i+100);pc.properties.writeWithoutResponse?await pc.writeValueWithoutResponse(ch):await pc.writeValue(ch);if(by.length>1500&&i%1000==900)await new Promise(r=>setTimeout(r,30))}}
@@ -407,7 +407,7 @@ function docHtml(o,pay){const s=db.shop,e=esc,a5=s.psize=='A5',cl=o.cols||[];
  if(cl.length)h+=`<table><thead><tr>${cl.map(c=>`<th class="${c.al=='r'?'r':''}" style="width:${Math.round(c.w*100)}%">${e(c.h)}</th>`).join('')}</tr></thead><tbody>${o.rows.map(r=>`<tr>${r.map((t,i)=>`<td class="${cl[i].al=='r'?'r':''}">${e(t)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
  h+=`<div class="sm">${o.sums.map(([a,b,bd])=>`<div class="${bd?'b':''}"><span>${e(a)}</span><span>${e(b)}</span></div>`).join('')}</div>`;
  if(pay)h+=`<div class="pay"><div><p>${pay.due?'PAY NOW'+(pay.cur?' · YOUR CURRENT BALANCE':''):'SCAN TO PAY'}</p><p><b>₹${money(pay.amt)}</b>${pay.due?' due':''}</p>${pay.u?`<p>UPI ID: <b>${e(pay.id)}</b></p>`:''}${pay.b?`<p>${pay.bank.n?e(pay.bank.n)+' · ':''}${e(pay.bank.h)}</p><p>A/c no: <b>${e(pay.bank.a)}</b> · IFSC: <b>${e(pay.bank.i)}</b></p>`:''}</div>${pay.qr?`<div style="text-align:center">${QR.svg(pay.qr,3).replace(/width="\d+" height="\d+"/,'width="140" height="140"')}<div>Scan to pay</div></div>`:''}</div>`;
- return h+(o.barcode?`<div class="bc">${TxEAN13.svg(o.barcode)}<small>Scan in Shop Bill to open this transaction</small></div>`:'')+`<div class="f">Thank you!</div></body></html>`}
+ return h+(o.barcode?`<div class="bc">${TxEAN13.svg(o.barcode)}</div>`:'')+`<div class="f">Thank you!</div></body></html>`}
 function printNormal(o,pay){const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';document.body.appendChild(f);const d=f.contentWindow.document;d.open();d.write(docHtml(o,pay));d.close();
  setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){toast('This phone could not open the print screen. Use Share as image instead.')}setTimeout(()=>f.remove(),60000)},400)}
 /* ---------- suppliers & purchases ---------- */
