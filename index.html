@@ -36,7 +36,7 @@ body.flow nav{display:none}
 .cn{color:var(--mut);font-size:12px;line-height:1.35;margin-top:3px}
 #scBill{display:none}#sc.bill #scBill{display:flex;flex-direction:column;flex:1;min-height:0;background:var(--bg)}#sc.bill .scan-stage{flex:0 0 24vh;min-height:140px}#sc.bill .scan-help,#sc.bill .scan-cancel{display:none}#sc.bill .scan-foot{padding-top:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}
 .scl{flex:1;min-height:0;overflow:auto;padding:6px 10px;overscroll-behavior:contain}.scr{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:5px}.scr.new{border-color:var(--g);animation:scf .8s}@keyframes scf{from{background:var(--g2)}to{background:var(--card)}}
-.scr .gr{flex:1;min-width:0}.scr .gr b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.scr .e{display:block;color:var(--red);font-size:11.5px;line-height:1.3}.scr .stp{display:flex;align-items:center;gap:6px}.scr .stp button{width:30px;height:30px;padding:0;border-radius:8px;background:var(--g2);color:var(--g);font-size:18px;font-weight:700;line-height:1}.scr .stp b{min-width:22px;text-align:center}.scr .amt{min-width:64px;text-align:right}.scn{text-align:center;padding:16px}
+.scr .gr{flex:1;min-width:0}.scr .gr b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.scr .e{display:block;color:var(--red);font-size:11.5px;line-height:1.3}.scr .stp{display:flex;align-items:center;gap:6px}.scr .stp button{width:30px;height:30px;padding:0;border-radius:8px;background:var(--g2);color:var(--g);font-size:18px;font-weight:700;line-height:1}.scr .stp .q{min-width:50px;text-align:center;font-size:12px;color:var(--mut)}.scr .stp .q b{font-size:14px;color:var(--ink)}.scr .stp .q small{font-size:11px}.scr .stp button:disabled{opacity:.35}.scr.pk{flex-wrap:wrap}.scr.pk .scp{flex:0 0 100%;display:flex;justify-content:space-between;gap:10px}.scr .amt{min-width:64px;text-align:right}.scn{text-align:center;padding:16px}
 .scb{display:flex;align-items:center;gap:10px;padding:8px 10px;border-top:1px solid var(--line);background:var(--card)}.scb .m{flex:1;font-weight:700;font-size:15px;color:var(--ink)}.scb .btn{flex:none;min-height:38px;padding:6px 22px}
 .scu{display:flex;align-items:center;gap:8px;margin:6px 10px 0;padding:6px 10px;background:#fff7e6;border:1px solid #f3d38a;border-radius:10px;font-size:13px}.scu span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scu button{padding:4px 10px;font-size:12px;border-radius:8px}.scu .x{background:transparent;color:var(--mut);padding:4px 6px}
 .empty{text-align:center;padding:14px 6px;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink)}
@@ -298,9 +298,9 @@ async function scannerCheckLight(force=false){if(scanTorchMode!=='auto'||!scanTo
 function scannerResetTorch(){scanTorchMode='off';scanTorchOn=false;scanTorchSupported=false;scanTorchTrack=null;scanLastLightCheck=0;scannerTorchButtons()}
 function scannerBeep(){if(!scannerSound)return;try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;if(!scanAudio)scanAudio=new A();const play=()=>{const o=scanAudio.createOscillator(),g=scanAudio.createGain(),t=scanAudio.currentTime;o.type='sine';o.frequency.setValueAtTime(880,t);o.frequency.setValueAtTime(1320,t+.075);g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.16,t+.012);g.gain.exponentialRampToValueAtTime(.0001,t+.19);o.connect(g);g.connect(scanAudio.destination);o.start(t);o.stop(t+.2)};if(scanAudio.state==='suspended')scanAudio.resume().then(play).catch(()=>{});else play()}catch(e){}}
 /* Bill scanning (sale / estimate): the camera stays open, every scan adds the item at once (no pop-up) and the list below the camera shows what is on the bill. */
-let scanKeep=false,scanLastCode='',scanLastAt=0,scUnk='',scanLastId=null;
+let scanKeep=false,scanLastCode='',scanLastAt=0,scUnk='',scanLastId=null;const SCAN_GAP=600; /* ms the same code must be out of view before it counts again */
 function scannerAccept(value){const c=String(value||'').trim();if(!c)return warn('Enter or scan a barcode first');
- if(scanKeep){const n=Date.now();if(c===scanLastCode&&n-scanLastAt<1200){scanLastAt=n;return}scanLastCode=c;scanLastAt=n;scBillAdd(c);return}
+ if(scanKeep){const n=Date.now();if(c===scanLastCode&&n-scanLastAt<SCAN_GAP){scanLastAt=n;return}scanLastCode=c;scanLastAt=n;scBillAdd(c);return}
  const cb=scanCallback;scanCallback=null;stopScan();scannerBeep();if(cb)cb(c)}
 function scanManual(){const e=$('#scanManualInput');if(!e)return;if(scanKeep)scanLastCode='';scannerAccept(e.value);if(scanKeep)e.value=''}
 function billScan(){scan(()=>{},'bill')}
@@ -308,11 +308,16 @@ function scBillAdd(c){const i=db.items.find(x=>x.code==c);
  if(!i){scUnk=c;try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
  scUnk='';const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1});
  scanLastId=i.id;scannerBeep();const st=$('#scanStatus');if(st)st.textContent='Added · '+i.name;render();scBillDraw()}
-function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l)return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
+function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l||(d<-1&&l.q+d<-1e-9))return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
 function scAddUnknown(){const c=scUnk;stopScan();itemForm(0,c);saleAddFlag=true}
 function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cart.map(line).filter(Boolean),T=totals(ls),first=scanLastId,ord=[...ls].reverse().sort((a,b)=>(b.id==first)-(a.id==first)),u=$('#scUnk');
  if(u)u.innerHTML=scUnk?`<div class="scu"><span>Unknown code <b>${esc(scUnk)}</b></span><button onclick="scAddUnknown()">Add item</button><button class="x" onclick="scUnk='';scBillDraw()" aria-label="Dismiss">✕</button></div>`:'';
- p.innerHTML=ord.map(l=>{const m=lineIssues(l)[0];return `<div class="scr ${l.id==first?'new':''}"><div class="gr"><b>${esc(l.i.name)}</b>${m?`<span class="e">${esc(issText(m))}</span>`:''}</div><div class="stp"><button onclick="scQty(${l.id},-1)" aria-label="Less">−</button><b>${fq(l.q)}</b><button onclick="scQty(${l.id},1)" aria-label="More">+</button></div><b class="amt">₹${money(l.amt)}</b></div>`}).join('')||'<div class="m scn">Scan an item to add it. Each scan adds 1.</div>';
+ p.innerHTML=ord.map(l=>{const i=l.i,m=lineIssues(l)[0],pq=+i.pq>1?+i.pq:0,
+  st=(v,u,dn,up,off)=>`<div class="stp"><button onclick="scQty(${l.id},${dn})" aria-label="Less" ${off?'disabled':''}>−</button><span class="q"><b>${v}</b> <small>${u}</small></span><button onclick="scQty(${l.id},${up})" aria-label="More">+</button></div>`,
+  top=`<div class="gr"><b>${esc(i.name)}</b>${m?`<span class="e">${esc(issText(m))}</span>`:''}</div>`,amt=`<b class="amt">₹${money(l.amt)}</b>`;
+  if(!pq)return `<div class="scr ${l.id==first?'new':''}">${top}${st(fq(l.q),esc(uQ(uC(i),l.q)),-1,1)}${amt}</div>`;
+  const k=Math.floor(l.q/pq+1e-9),r=Math.round((l.q-k*pq)*1000)/1000;
+  return `<div class="scr pk ${l.id==first?'new':''}">${top}${amt}<div class="scp">${st(k,esc(i.pu||'Box'),-pq,pq,!k)}${st(fq(r),esc(uQ(uC(i),r)),-1,1)}</div></div>`}).join('')||'<div class="m scn">Scan an item to add it. Each scan adds 1.</div>';
  const t=$('#scTot');if(t)t.textContent=(ls.length?ls.length+(ls.length==1?' item':' items')+' · ':'')+'₹'+money(T.t)}
 async function scan(cb,context='item'){
  if(!('BarcodeDetector'in window))return warn('Barcode scanning needs Chrome on Android. You can type the barcode in the search field instead.');
