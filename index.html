@@ -47,6 +47,7 @@ body.flow nav{display:none}
 @keyframes scok{0%{box-shadow:0 0 0 999px rgba(34,197,94,.38)}100%{box-shadow:0 0 0 999px rgba(13,21,32,.45)}}@keyframes scbad{0%{box-shadow:0 0 0 999px rgba(245,158,11,.34)}100%{box-shadow:0 0 0 999px rgba(13,21,32,.45)}}
 @keyframes scpop{0%{opacity:0;transform:scale(.4)}25%{opacity:1;transform:scale(1.12)}60%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.scan-stage.ok .scan-guide,.scan-stage.bad .scan-guide,.scan-stage.ok .scan-guide:after,.scan-stage.bad .scan-guide:after{animation-duration:.01s}}
+#dbody,.ieb,.scl,#edl{-webkit-overflow-scrolling:touch}
 .empty{text-align:center;padding:14px 6px;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink)}
 .f{margin:0 0 8px}.f label,label{display:block;font-size:12px;font-weight:600;color:#3a4654;margin:0 0 2px}.f .m{margin-top:2px}label.chk{display:flex;gap:8px;align-items:center;color:var(--ink);margin:6px 0}
 .g2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.g3c{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.1fr) minmax(0,.85fr);gap:6px}details .g3c{margin-left:-9px;margin-right:-9px}.g3c.s{grid-template-columns:minmax(0,1.75fr) minmax(0,1.65fr) minmax(0,1fr)}.g3c.s label{font-size:10.5px}.g3c .f{min-width:0}.g3c label{display:block;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(max-width:340px){.g3c,.g3c.s{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}.g3c input{width:100%;min-width:0;padding-left:10px;padding-right:6px}.g3{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr);gap:6px;margin-top:6px}
@@ -171,6 +172,12 @@ function qty(id,d){const l=cart.find(x=>x.id==id);setq(id,Math.round((l.q+d)*100
 let bwh=false,bparty='',brecv='',bmode='Cash',editId='',bpay='full',bdv='',bdt='₹',bsp=blankSp(),bdate='',isEst=false,estId='',editEstId='',rmAck=0;
 
 /* ---------- items ---------- */
+/* ---------- ONE scroll memory ----------
+   Every scrolling surface remembers its own position:
+   - each tab of the main page (the window scrolls): leaving a tab saves where you were, coming back restores it, a new sale / purchase starts at the top (tabSy)
+   - each page in the dialog stack (#dbody): opening another page saves the one you leave (p.sy), Back restores it, a page opened fresh always starts at the top (drawP / pg / pgBack)
+   - lists redrawn inside a popup (picker, scan list) go back to the top when what they show changes (edFind, scBillDraw) */
+const tabSy={};let tabNew=0;
 let itemQ='',partyQ='',_rt;
 const srt=(a,k)=>[...a].sort((x,y)=>String(x[k]).localeCompare(String(y[k])));
 
@@ -285,7 +292,7 @@ function remindImg(id){const p=db.parties.find(x=>x.id==id);if(!p)return;p.rem=D
 
 
 function resetAll(){pg('Reset data',()=>{const m=segVal('rmod')||'Data only';return `<div class="c bad">This permanently deletes data on this phone${sc.repo?' and, through sync, on your other phones and the saved copy':''}. Download a backup first if you may need it.</div>${fld('What to erase',SEG('rmod',['Data only','Everything'],'Data only'),'Data only keeps shop details, tax scheme, messages, print and share options and your sync connection. Everything also resets those.')}${fld('Enter the PIN to continue',`<input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">`)}`},()=>`<button class="btn r" onclick="resetGo()">Erase now</button>`)}
-function resetGo(){if(($('#pin').value||'')!==(db.shop.pin||'4787'))return bad('#pin','Wrong PIN');snapClear();const all=segVal('rmod')=='Everything',o=db;db={items:[],bills:[],shop:all?{name:'My Shop',addr:'',gstin:''}:o.shop,seq:1,parties:[],pays:[],adj:[],tomb:{},sups:[],purch:[],spays:[],exp:[],notes:[],est:[],mig2:o.mig2,mig3:o.mig3,lastBackup:o.lastBackup,rst:Date.now()};cart=[];pcart=[];tab='home';rpt='';flowO=null;closeAll();save();render();toast(all?'Everything erased':'Data erased, settings kept')}
+function resetGo(){if(($('#pin').value||'')!==(db.shop.pin||'4787'))return bad('#pin','Wrong PIN');snapClear();const all=segVal('rmod')=='Everything',o=db;db={items:[],bills:[],shop:all?{name:'My Shop',addr:'',gstin:''}:o.shop,seq:1,parties:[],pays:[],adj:[],tomb:{},sups:[],purch:[],spays:[],exp:[],notes:[],est:[],mig2:o.mig2,mig3:o.mig3,lastBackup:o.lastBackup,rst:Date.now()};cart=[];pcart=[];tab='home';rpt='';navStack.length=0;closeAll();save();render();toast(all?'Everything erased':'Data erased, settings kept')}
 const toB=u=>{let s='';const a=new Uint8Array(u);for(let i=0;i<a.length;i+=32768)s+=String.fromCharCode.apply(null,a.subarray(i,i+32768));return btoa(s)},fromB=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
 async function bkKey(pw,salt){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
 async function bkDec(env,pw){const key=await bkKey(pw,fromB(env.s)),p=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB(env.i)},key,fromB(env.d));return new TextDecoder().decode(p)}
@@ -324,7 +331,7 @@ function billScan(){scan(()=>{},'bill')}
 function scBillAdd(c){const i=db.items.find(x=>x.code==c);
  if(!i){scUnk=c;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
  scUnk='';const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1});
- scanLastId=i.id;scannerBeep();scanFlash('ok');const st=$('#scanStatus');if(st)st.textContent='Added · '+i.name;render();scBillDraw()}
+ scanLastId=i.id;scannerBeep();scanFlash('ok');const st=$('#scanStatus');if(st)st.textContent='Added · '+i.name;render();scBillDraw();const sl=$('#scl');if(sl)sl.scrollTop=0}
 function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l||(d<-1&&l.q+d<-1e-9))return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
 function scAddUnknown(){const c=scUnk;stopScan();itemForm(0,c);saleAddFlag=true}
 function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cart.map(line).filter(Boolean),T=totals(ls),first=scanLastId,ord=[...ls].reverse().sort((a,b)=>(b.id==first)-(a.id==first)),u=$('#scUnk');
@@ -706,10 +713,11 @@ function toast(m,bd){let t=$('#toast');if(!t){t=document.createElement('div');t.
 /* pages (full-screen) and bottom sheets */
 let pst=[];
 const ptitle=p=>typeof p.title=='function'?p.title():p.title;
-function pg(title,build,foot,rep){if(!$('#dlg').open)pst=[];if(rep)pst.pop();pst.push({title,build,foot});drawP(1);if(!$('#dlg').open)$('#dlg').showModal()}
-function drawP(top){keepChips();const p=pst[pst.length-1];$('#ptitle').textContent=ptitle(p);const y=top?0:$('#dbody').scrollTop;$('#dbody').innerHTML=p.build();const f=p.foot?p.foot():'';$('#pfoot').innerHTML=f;$('#pfoot').style.display=f?'flex':'none';{const mv=[...$('#pfoot').querySelectorAll('[data-top]')];if(mv.length){const r=document.createElement('div');r.className='line sp topr';r.innerHTML='<span></span><span class="ics"></span>';mv.forEach(b=>r.lastChild.appendChild(b));$('#dbody').prepend(r)}}$('#dbody').scrollTop=y;syncHist()}
+function pg(title,build,foot,rep){const was=$('#dlg').open;if(!was)pst=[];else if(!rep&&pst.length)pst[pst.length-1].sy=$('#dbody').scrollTop;if(rep)pst.pop();pst.push({title,build,foot,sy:0});drawP(1);if(!was){$('#dlg').showModal();$('#dbody').scrollTop=0}}
+function drawP(top){keepChips();const p=pst[pst.length-1];$('#ptitle').textContent=ptitle(p);const y=top===2?p.sy||0:top?0:$('#dbody').scrollTop;$('#dbody').innerHTML=p.build();const f=p.foot?p.foot():'';$('#pfoot').innerHTML=f;$('#pfoot').style.display=f?'flex':'none';{const mv=[...$('#pfoot').querySelectorAll('[data-top]')];if(mv.length){const r=document.createElement('div');r.className='line sp topr';r.innerHTML='<span></span><span class="ics"></span>';mv.forEach(b=>r.lastChild.appendChild(b));$('#dbody').prepend(r)}}$('#dbody').scrollTop=y;if(y>0)requestAnimationFrame(()=>{const b=$('#dbody');if(b&&b.scrollTop<y)b.scrollTop=y});syncHist()}
 function pgRefresh(){if(pst.length)drawP(0)}
-function pgBack(){pst.pop();if(pst.length)drawP(1);else{$('#dlg').close();render()}}
+function pgPopTo(n){pst.length=Math.min(pst.length,Math.max(0,n));if(pst.length)drawP(2);else{$('#dlg').close();render()}}
+function pgBack(){pgPopTo(pst.length-1)}
 function pgClose(){pst=[];if($('#dlg').open)$('#dlg').close();render()}
 function closeAll(){pst=[];if($('#dlg').open)$('#dlg').close()}
 function ask(msg,label,js){sheet(msg,[['del',label,js,'rd']])}
@@ -738,23 +746,33 @@ async function qrOut(mode){const q=_qr;if(!q)return;const cv=qrCardCanvas(q.a,q.
 function sheet(t,items){$('#shb').innerHTML=`<div class="sht">${esc(t)}</div>`+items.map(([i,l,f,c])=>`<button class="shi ${c||''}" onclick="$('#sheet').close();${f}">${ic(i)}<span>${l}</span></button>`).join('')+`<button class="shi x" onclick="$('#sheet').close()">Cancel</button>`;$('#sheet').showModal()}
 /* shell */
 const RPT={t:'All transactions',s:'Sales',q:'Estimates',p:'Purchases',n:'Returns',e:'Expenses',r:'Profit & loss',m:'Money',g:'GST filing'},RI={i:'chart',t:'list',s:'bag',q:'doc',p:'box',n:'undo',e:'coin',r:'chart',m:'coin',g:'doc'};
-let rpt='',rptH=false,pgst='y',flowO=null;
+let rpt='',rptH=false,rptFrom='home',pgst='y';
 /* open a report fresh: its own timeline and tab, back to the defaults */
-function rptBack(){if(rptH)go('home');else{rpt='';render()}}
-function openRpt(k){rptH=tab!='reports';tab='reports';rpt=k;PER={r:'all'};txF='all';txQ='';irDays=30;plBy='item';plSort='p';plDir=-1;render()}
+function rptBack(){if(rptH)go(rptFrom||'home');else{rpt='';render()}}
+function openRpt(k){rptH=tab!='reports';if(rptH)rptFrom=(tab=='bill'||tab=='purch')?'home':tab;tab='reports';rpt=k;PER={r:'all'};txF='all';txQ='';irDays=30;plBy='item';plSort='p';plDir=-1;render()}
 function ttl(){return({home:db.shop.name||'Shop',items:'Items',people:'People',reports:rpt?RPT[rpt]:'Reports',bill:isEst?'New estimate':editId?'Edit bill '+((db.bills.find(x=>x.id==editId)||{}).no||''):'New sale',purch:pEditId?'Edit purchase':'New purchase'})[tab]||''}
 const nb=n=>`<button class="${tab==n[0]?'a':''}" onclick="go('${n[0]}')">${ic(n[2])}${n[1]}</button>`;
 /* where a sale or purchase was started from, so closing its summary returns there */
-function flowFrom(pgJs){if(!flowO)flowO={tab:(tab=='bill'||tab=='purch')?'home':tab,pg:pgJs||''};else if(pgJs&&!flowO.pg)flowO.pg=pgJs}
-function flowLand(){const o=flowO||{tab:'home',pg:''};tab=o.tab;render();if(o.pg)try{(new Function(o.pg))()}catch(e){}}
-function flowBack(){const o=flowO;flowO=null;if(o){tab=o.tab;render();if(o.pg)try{(new Function(o.pg))()}catch(e){}}else go('home')}
-function go(t){if(t=='bill'||t=='purch')flowFrom();else flowO=null;if(t=='reports')rpt='';tab=t;render()}
+/* ---------- where a flow (sale, purchase, estimate, add stock) was started from ----------
+   navStack holds one descriptor per active flow: the tab, the open report, and the dialog pages that were showing (with their scroll positions).
+   Finishing or leaving the flow pops it and puts the user back exactly there, and nothing stale is left for the next flow. */
+const navStack=[];
+function flowFrom(view,edit){const top=navStack[navStack.length-1],inFlow=tab=='bill'||tab=='purch';
+ if(top&&inFlow){if(view&&!top.view)top.view=view;return}
+ if(!inFlow)navStack.length=0;
+ const open=$('#dlg').open&&pst.length>0;if(open)pst[pst.length-1].sy=$('#dbody').scrollTop;
+ navStack.push({tab:inFlow?'home':tab,rpt,rptH,rptFrom,view:view||null,pages:open?(edit?pst.slice(0,-1):pst.slice()):[]})}
+function flowReturn(){const o=navStack.pop();if(!o){go('home');return}
+ tab=o.tab;rpt=o.rpt;rptH=o.rptH;rptFrom=o.rptFrom;render();
+ if(o.pages.length){pst=o.pages;const d=$('#dlg');if(!d.open)d.showModal();drawP(2)}else if(o.view)try{o.view()}catch(e){}}
+const flowLand=flowReturn,flowBack=flowReturn;
+function go(t){if(t=='bill'||t=='purch')flowFrom();else navStack.length=0;if(t=='reports')rpt='';tab=t;render()}
 /* a row of chips can scroll sideways; after every redraw, bring the selected one back into view */
 function keepChips(){try{requestAnimationFrame(()=>document.querySelectorAll('.chips').forEach(c=>{const a=c.querySelector('.chip.on');if(a&&c.scrollWidth>c.clientWidth)c.scrollLeft=Math.max(0,a.offsetLeft-(c.clientWidth-a.offsetWidth)/2)}))}catch(e){}}
-function render(){if(tab!==_rt){itemQ=partyQ=txQ='';_rt=tab}keepChips();const flow=tab=='bill'||tab=='purch',sub=!flow&&tab!='home';document.body.classList.toggle('flow',flow);
+function render(){if(tab!==_rt){tabSy[_rt]=scrollY;itemQ=partyQ=txQ='';_rt=tab;tabNew=1}keepChips();const flow=tab=='bill'||tab=='purch',sub=!flow&&tab!='home';document.body.classList.toggle('flow',flow);
  $('#hd').innerHTML=(flow||sub?`<button class="hb" onclick="leaveFlow()" aria-label="Back">${ic('back')}</button>`:'')+`<div class="ht"><b>${esc(ttl())}</b><span class="m" id="sx">${esc(stx||'')}</span></div>`+(flow?'':`<button class="hb" onclick="quickScan()" aria-label="Quick scan" title="Quick scan">${ic('scan')}</button><button class="hb" onclick="go('reports')" aria-label="Reports">${ic('chart')}</button><button class="hb" onclick="openSettings()" aria-label="Settings">${ic('gear')}</button>`);
  $('#nav').innerHTML=(tab=='reports')?'':`<button class="fab" onclick="newSale()" aria-label="New sale">${ic('plus')}New sale</button>`;
- $('#app').className=tab;$('#app').innerHTML=({home:vHome,items:vItems,people:vPeople,reports:vReports,bill:vSale,purch:vPurch})[tab]();
+ $('#app').className=tab;$('#app').innerHTML=({home:vHome,items:vItems,people:vPeople,reports:vReports,bill:vSale,purch:vPurch})[tab]();if(tabNew){tabNew=0;scrollTo(0,flow?0:tabSy[tab]||0)}
  if(tab=='bill')edFind();edDraw();syncHist()}
 function setStatus(t){stx=t;const e=$('#sx');if(e)e.textContent=t;const s=$('#sst');if(s)s.textContent=t||'Not connected'}
 function sset(k,v){db.shop[k]=v;db.shop.u=Date.now();if(k=='name'){const e=$('.ht b');if(e&&tab=='home')e.textContent=v}save()}
@@ -771,10 +789,10 @@ function newSale(){flowFrom();if(editId||isEst||estId)resetSale();closeAll();tab
 function newPurch(){flowFrom();if(pEditId)resetPurch();closeAll();if(!pdate)pdate=today();tab='purch';render()}
 
 /* pickers */
-let pickCb=null,pickQ='';
+let pickCb=null,pickQ='',pickBase=0;
 function pickRows(kind){const q=pickQ.trim().toLowerCase();return srt(kind=='c'?db.parties:db.sups,'name').filter(p=>!q||p.name.toLowerCase().includes(q)||String(p.phone).includes(q)).map(p=>`<div class="card line tap" onclick="pickDo(${p.id})">${av(p.name)}<div class="gr"><b>${esc(p.name)}</b><span class="m">${esc(p.phone||'')}</span></div>${Math.abs(p.bal)>0.005?`<div class="amt ${p.bal>0?(kind=='c'?'rcv':'due'):''}">₹${money(Math.abs(p.bal))}</div>`:''}</div>`).join('')||'<div class="empty"><span class="m">No match. Tap + to add one.</span></div>'}
-function pickP(kind,cb){pickCb=cb;pickQ='';pg(kind=='c'?'Choose customer':'Choose supplier',()=>`${searchBox({ph:'Search by name or phone',ev:`oninput="pickQ=this.value;$('#pkl').innerHTML=pickRows('${kind}')"`,btns:addBtn(kind=='c'?'partyForm(0,1)':'supForm(0,1)','Add new')})}<div id="pkl">${pickRows(kind)}</div>`)}
-function pickDo(id){const f=pickCb;closeAll();f(id);render()}
+function pickP(kind,cb){pickCb=cb;pickQ='';pg(kind=='c'?'Choose customer':'Choose supplier',()=>`${searchBox({ph:'Search by name or phone',ev:`oninput="pickQ=this.value;$('#pkl').innerHTML=pickRows('${kind}')"`,btns:addBtn(kind=='c'?'partyForm(0,1)':'supForm(0,1)','Add new')})}<div id="pkl">${pickRows(kind)}</div>`);pickBase=pst.length-1}
+function pickDo(id){const f=pickCb;pickCb=null;pgPopTo(pickBase);if(f)f(id);render()}
 function recvPick(){pickP('c',id=>recv(id))}
 /* home */
 /* sale flow */
@@ -809,7 +827,7 @@ function itemView(id,rep,fresh){const i0=db.items.find(x=>x.id==id);if(!i0)retur
   ()=>{const it=db.items.find(x=>x.id==id)||{};return B.edit(`itemForm(${id})`)+fa('box','Add stock',`buyItem(${id})`)+(it.hide?fa('undo','Unhide',`hideItem(${id},0)`):B.del(`delItem(${id})`))+B.nw('pgBack();itemForm(0)','New item')+B.close()},rep)}
 
 
-function buyItem(id){closeAll();if(pEditId)resetPurch();if(!pdate)pdate=today();tab='purch';padd(id)}
+function buyItem(id){flowFrom();closeAll();if(pEditId)resetPurch();if(!pdate)pdate=today();tab='purch';padd(id)}
 const itemUses=id=>[db.bills,db.purch,db.notes,db.est].reduce((t,a)=>t+a.filter(r=>!r.void&&r.lines.some(l=>l.id==id)).length,0);
 function hideItem(id,on){const i=db.items.find(x=>x.id==id);if(!i)return;if(on)i.hide=true;else delete i.hide;i.u=Date.now();cart=cart.filter(x=>x.id!=id);save();render();toast(on?'Item hidden':'Item is back in your lists');pgBack();pgRefresh()}
 function delItem(id,ok){const n=itemUses(id);if(n){ask('This item is on '+n+' bill'+(n==1?'':'s')+', purchase'+(n==1?'':'s')+' or note'+(n==1?'':'s')+', so deleting it would break their profit and stock history. Hide it from your lists instead?','Yes, hide it',"hideItem('"+id+"',1)");return}if(!ok&&(ask('Delete this item? Past bills keep its name.','Yes, delete',"delItem('"+id+"',1)"),1))return;db.items=db.items.filter(x=>x.id!=id);db.tomb[id]=Date.now();cart=cart.filter(x=>x.id!=id);save();toast('Item deleted');pgClose()}
@@ -833,7 +851,7 @@ function walkView(){pg('Walk-in customers',()=>{const E=walkEntries(),sl=E.filte
 function partyView(id,rep,fresh){const p0=db.parties.find(x=>x.id==id);if(!p0)return;delete lgR[lgKey('c',id)];
  pg(()=>(db.parties.find(x=>x.id==id)||p0).name,()=>{const p=db.parties.find(x=>x.id==id)||p0,owe=p.bal>0.005,st=lgEntries('c',id);
   return `<div class="c"><div class="m">${esc(p.phone)||'No phone saved'}${p.gstin?' · '+esc(p.gstin):''}</div><div class="bal ${owe?'rcv':''}">₹${money(Math.abs(p.bal))}<span> ${owe?"you'll get":p.bal<-0.005?'advance paid':'all settled'}</span></div>${balNote('c',id)}${odOf(p)>0.5?`<div class="m"><b class="due">₹${money(odOf(p))} overdue</b> · older than ${crD()} days</div>`:''}${p.rem?`<div class="m">Last reminded ${dt(p.rem)}</div>`:''}${owe?`<div class="row rowt"><button class="btn o" onclick="payQr('c',${id})">Show QR · ₹${money(p.bal)}</button></div>`:''}</div>${lgHead('c',id,st.length)}${st.length?lgTable(st.map(x=>stRow(x,0)).join('')+lgOpenRow('c',id),1):'<div class="empty"><span class="m">No transactions '+(st.span.from||st.span.to<Infinity?'in this period':'yet')+'.</span></div>'}`},
-  ()=>{const p=db.parties.find(x=>x.id==id)||p0,mo=[['edit','Edit',`partyForm(${id})`],['del','Delete',`delParty(${id})`,'rd'],...(fresh?[]:[['plus','New customer','pgBack();partyForm(0)']]),...(p.bal>0.005?[['bell','Send reminder',`partyShare(${id})`]]:[])],sale=fa('bag','New sale',`bparty=${id};flowFrom('partyView(${id})');closeAll();tab='bill';render()`);return fresh?B.more(mo)+sale+B.nw('pgBack();partyForm(0)','New customer')+B.close():B.more(mo)+fa('down','Receive money',`recv(${id})`)+sale+B.close()},rep)}
+  ()=>{const p=db.parties.find(x=>x.id==id)||p0,mo=[['edit','Edit',`partyForm(${id})`],['del','Delete',`delParty(${id})`,'rd'],...(fresh?[]:[['plus','New customer','pgBack();partyForm(0)']]),...(p.bal>0.005?[['bell','Send reminder',`partyShare(${id})`]]:[])],sale=fa('bag','New sale',`bparty=${id};flowFrom(()=>partyView(${id}));closeAll();tab='bill';render()`);return fresh?B.more(mo)+sale+B.nw('pgBack();partyForm(0)','New customer')+B.close():B.more(mo)+fa('down','Receive money',`recv(${id})`)+sale+B.close()},rep)}
 function saveRecv(id){const a=Math.round(+$('#ra').value*100)/100;if(!(a>0))return bad('#ra','Enter the amount received');
  const t0=tOn($('#rd').value||today()),sp=segVal('rm')=='Split'?spVals():[{m:segVal('rm')||'Cash',a}];if(!sp.length)return bad('#sp_Cash','Enter the split amounts');let y;sp.forEach(x=>{y={id:uid(),no:nextRNo(),pid:id,amt:x.a,mode:x.m,t:t0};db.pays.unshift(y)});recalc();save();render();payView(y.id,1,1);toast('Payment recorded')}
 function delParty(id,ok){const q=db.parties.find(x=>x.id==id);if(q&&Math.abs(q.bal)>=.005)return warn('Settle the balance before deleting this customer.');if(!ok&&(ask('Delete this customer? Past bills keep the name.','Yes, delete',"delParty('"+id+"',1)"),1))return;db.parties=db.parties.filter(x=>x.id!=id);db.tomb[id]=Date.now();save();toast('Customer deleted');pgClose()}
@@ -847,7 +865,7 @@ function saveSup(id,sel){let nw=0;const n=$('#s1').value.trim(),g=$('#s3').value
 function supView(id,rep,fresh){const p0=db.sups.find(x=>x.id==id);if(!p0)return;delete lgR[lgKey('s',id)];
  pg(()=>(db.sups.find(x=>x.id==id)||p0).name,()=>{const p=db.sups.find(x=>x.id==id)||p0,owe=p.bal>0.005,st=lgEntries('s',id);
   return `<div class="c"><div class="m">${esc(p.gstin||'')} ${esc(p.phone||'')}</div><div class="bal ${owe?'due':''}">₹${money(Math.abs(p.bal))}<span> ${owe?"you'll give":p.bal<-0.005?'advance paid':'all settled'}</span></div>${balNote('s',id)}</div>${lgHead('s',id,st.length)}${st.length?lgTable(st.map(x=>stRow(x,1)).join('')+lgOpenRow('s',id),1):'<div class="empty"><span class="m">No transactions '+(st.span.from||st.span.to<Infinity?'in this period':'yet')+'.</span></div>'}`},
-  ()=>{const p=db.sups.find(x=>x.id==id)||p0,mo=[['edit','Edit',`supForm(${id})`],['del','Delete',`delSup(${id})`,'rd'],...(fresh?[]:[['plus','New supplier','pgBack();supForm(0)']])],pur=fa('box','New purchase',`psup=${id};flowFrom('supView(${id})');newPurch()`);return fresh?B.more(mo)+B.nw('pgBack();supForm(0)','New supplier')+pur+B.close():B.more(mo)+(p.bal>0.005?fa('up','Pay supplier',`payS(${id})`):'')+pur+B.close()},rep)}
+  ()=>{const p=db.sups.find(x=>x.id==id)||p0,mo=[['edit','Edit',`supForm(${id})`],['del','Delete',`delSup(${id})`,'rd'],...(fresh?[]:[['plus','New supplier','pgBack();supForm(0)']])],pur=fa('box','New purchase',`psup=${id};flowFrom(()=>supView(${id}));newPurch()`);return fresh?B.more(mo)+B.nw('pgBack();supForm(0)','New supplier')+pur+B.close():B.more(mo)+(p.bal>0.005?fa('up','Pay supplier',`payS(${id})`):'')+pur+B.close()},rep)}
 function savePayS(id){const a=Math.round(+$('#ra').value*100)/100;if(!(a>0))return bad('#ra','Enter the amount paid');let y;{const t0=tOn($('#rd').value||today()),rf=(($('#rrf')||{}).value||'').trim(),sp=segVal('rm')=='Split'?spVals():[{m:segVal('rm')||'Cash',a}];if(!sp.length)return bad('#sp_Cash','Enter the split amounts');sp.forEach(x=>{y={id:uid(),no:nextPNo(),sid:id,amt:x.a,mode:x.m,t:t0,...(rf?{ref:rf}:{})};db.spays.unshift(y)})}recalc();save();render();spayView(y.id,1,1);toast('Payment recorded')}
 function delSup(id,ok){const q=db.sups.find(x=>x.id==id);if(q&&Math.abs(q.bal)>=.005)return warn('Settle the balance before deleting this supplier.');if(!ok&&(ask('Delete this supplier? Past purchase bills keep the name.','Yes, delete',"delSup('"+id+"',1)"),1))return;db.sups=db.sups.filter(x=>x.id!=id);db.tomb[id]=Date.now();if(psup==id)psup='';save();toast('Supplier deleted');pgClose()}
 /* bill, receipt, purchase and note pages */
@@ -955,7 +973,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
  estOpen=e=>!(e.void||e.status=='converted'),
  TX={
   bill:{
-   coll:'bills',nm:'bill',freshDel:1,fc:'pgClose()',
+   coll:'bills',nm:'bill',freshDel:1,
    title:b=>'Bill '+b.no,
    share:id=>`billShare('${id}')`,
    print:id=>`printBill(db.bills.find(x=>x.id=='${id}'))`,
@@ -1003,7 +1021,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
      priv:estOpen(e)?estPriv(e):null}}},
 
   purch:{
-   coll:'purch',nm:'purchase',freshDel:1,fc:'pgClose()',
+   coll:'purch',nm:'purchase',freshDel:1,
    title:p=>'Purchase '+p.no,
    share:id=>`purchShare('${id}')`,
    print:id=>PS('purchaseDoc','purch',id),
@@ -1079,7 +1097,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
      note:e.note?esc(e.note):''}}},
 
   note:{
-   coll:'notes',nm:'note',fc:'pgClose()',
+   coll:'notes',nm:'note',
    title:n=>(n.kind=='c'?'Credit note ':'Debit note ')+n.no,
    share:id=>`shareNote('${id}')`,
    print:id=>PS('noteDoc','notes',id),
@@ -1357,7 +1375,7 @@ function packAmt(i,q,p,pp){const pq=+i.pq||0,P=p??i.price,B=pp??i.pp;if(pq>1&&B>
 let HD=0,ign=0,shT=0,picking=0;
 function pickFile(){picking=1;const i=$('#rst');i.value='';i.click()}
 function layers(){return(($('#sheet')||{}).open?1:0)+(($('#ied')||{}).open?1:0)+(($('#sc')||{}).open?1:0)+(($('#dlg')||{}).open?pst.length:0)+(tab=='bill'||tab=='purch'?1:(tab=='reports'&&rpt&&!rptH?2:tab!='home'?1:0))}
-function uiSave(){try{const fl=tab=='bill'||tab=='purch';sessionStorage.sb_ui=JSON.stringify({t:Date.now(),tab:fl?((flowO&&flowO.tab)||'home'):tab,rpt:fl?'':rpt,set:!!($('#dlg').open&&pst.length==1&&pst[0].build===vSettings)})}catch(e){}}
+function uiSave(){try{const fl=tab=='bill'||tab=='purch';sessionStorage.sb_ui=JSON.stringify({t:Date.now(),tab:fl?((navStack[navStack.length-1]||{}).tab||'home'):tab,rpt:fl?'':rpt,set:!!($('#dlg').open&&pst.length==1&&pst[0].build===vSettings)})}catch(e){}}
 function uiRestore(){let o;try{o=JSON.parse(sessionStorage.sb_ui||'null')}catch(e){}if(!o||Date.now()-o.t>18e5)return 0;if(['home','items','people','reports'].includes(o.tab))tab=o.tab;if(tab=='reports'&&o.rpt&&RPT[o.rpt])rpt=o.rpt;return !!o.set}
 function syncHist(){if(typeof history=='undefined')return;clearTimeout(shT);shT=setTimeout(()=>{uiSave();const L=layers();if(L>HD){for(;HD<L;HD++)history.pushState({d:HD+1},'')}else if(L<HD){const n=HD-L;HD=L;ign++;history.go(-n)}},0)}
 function backNav(){if($('#sheet').open){$('#sheet').close();return 1}if($('#sc').open){stopScan();return 1}if($('#ied').open){edClose();return 1}if($('#dlg').open){pgBack();return 1}
@@ -1376,10 +1394,10 @@ function edList(t,v){const P=EDP[t],q=v.toLowerCase(),fr=edFreq(t),all=db.items.
  if(q)return['',rows(all.filter(i=>i.name.toLowerCase().includes(q)||i.code==v).slice(0,60))];
  if(fr.length&&!edBr)return['<div class="sec">Quick access</div>',`<div class="qg">${fr.map(i=>edTile(i,P)).join('')}</div><button class="btn o bw" onclick="edBrowse(1)">Browse all items</button>`];
  return[`<div class="line sp"><div class="sec">All items · ${all.length}</div>${fr.length?'<button class="lnk" onclick="edBrowse(0)">Quick access</button>':''}</div>`,rows(srt(all,'name').slice(0,300))]}
-function edFind(){const i=$('#edq'),h=$('#edt'),r=$('#edl');if(r){const[a,b]=edList(edT,(i?i.value:'').trim());h.innerHTML=a;r.innerHTML=b}}
-const edBrowse=v=>{edBr=v;edFind()};
+function edFind(top){const i=$('#edq'),h=$('#edt'),r=$('#edl');if(r){const[a,b]=edList(edT,(i?i.value:'').trim());h.innerHTML=a;r.innerHTML=b;if(top){const c=$('#edc');if(c)c.scrollTop=0}}}
+const edBrowse=v=>{edBr=v;edFind(1)};
 function edEnter(){const v=(($('#edq')||{}).value||'').trim();if(!v)return;const q=v.toLowerCase(),H=db.items.filter(i=>!i.hide&&(i.code==v||i.name.toLowerCase().includes(q))),c=H.find(i=>i.code==v)||(H.length==1?H[0]:null),P=EDP[edT];if(c)window[P.add](c.id);else if(!H.length)window[P.code](v)}
-const edSrch=t=>`<div class="ddw"><div class="ddw stk">${searchBox({id:'edq',ph:'Search item or scan barcode',ev:`oninput="edFind()" onkeydown="if(event.key=='Enter')edEnter()" enterkeyhint="search"`,btns:scanBtn(`edClose();${EDP[t].scan}`,'Scan item barcode')})}<div id="edt">${edList(t,'')[0]}</div></div><div id="edl">${edList(t,'')[1]}</div></div>`
+const edSrch=t=>`<div class="ddw"><div class="ddw stk">${searchBox({id:'edq',ph:'Search item or scan barcode',ev:`oninput="edFind(1)" onkeydown="if(event.key=='Enter')edEnter()" enterkeyhint="search"`,btns:scanBtn(`edClose();${EDP[t].scan}`,'Scan item barcode')})}<div id="edt">${edList(t,'')[0]}</div></div><div id="edl">${edList(t,'')[1]}</div></div>`
 function edDraw(){const d=$('#ied');if(!d||!d.open)return;let h='',x=-1;
  if(edT=='s'){const ls=cart.map(line).filter(Boolean);if(edK!=null){x=ls.findIndex(l=>l.id==edK);if(x>=0)h=cartRow(ls[x],x)}}
  else if(edK!=null){const P=pcalc();x=P.ls.findIndex(l=>l.id==edK);if(x>=0)h=pLine(P.ls[x])}
@@ -1449,7 +1467,7 @@ const remAdv=(c,r,p)=>{db[c]=db[c].filter(y=>{const k=y.adv&&(y.bill?y.bill==r.i
 function delRec(coll,id,label,ok){const a=db[coll],r=a.find(x=>x.id==id);if(!r)return;if((coll=='bills'||coll=='purch')&&db.notes.some(n=>n.ref==id))return warn('Delete the return notes of this '+label+' first.');if(!ok&&(ask('Delete this '+label+' permanently? Stock and balances will go back.','Yes, delete',"delRec('"+coll+"','"+id+"','"+label+"',1)"),1))return;
  db[coll]=a.filter(x=>x.id!=id);db.tomb[id]=Date.now();const adv=coll=='bills'?['pays','Advance with bill ']:coll=='purch'?['spays','Advance with invoice ']:0;if(adv)db[adv[0]]=db[adv[0]].filter(y=>{const k=y.adv&&(y.bill?y.bill==r.id:y.note==adv[1]+r.no);if(k)db.tomb[y.id]=Date.now();return !k});
  const rp=coll=='purch'?syncCosts(r.lines.map(l=>l.id)):(coll=='notes'?noteSync(r):0);recalc();save();render();pgBack();pgRefresh();toast(label[0].toUpperCase()+label.slice(1)+' deleted'+(rp?' · selling price restored for '+rp+' item'+(rp==1?'':'s'):''))}
-function editEst(id){const e=db.est.find(x=>x.id==id);if(!e||e.void||e.status=='converted')return;flowFrom();closeAll();resetSale();isEst=true;editEstId=id;cart=e.lines.map(savedLine);bparty=e.pid||'';bwh=!!e.wh;bdv=e.bdv!==undefined?String(e.bdv):(e.bd?String(e.bd):'');bdt=e.bdt=='%'?'%':'₹';bdate=dayStr(e.t);tab='bill';render()}
+function editEst(id){const e=db.est.find(x=>x.id==id);if(!e||e.void||e.status=='converted')return;flowFrom(null,1);closeAll();resetSale();isEst=true;editEstId=id;cart=e.lines.map(savedLine);bparty=e.pid||'';bwh=!!e.wh;bdv=e.bdv!==undefined?String(e.bdv):(e.bd?String(e.bd):'');bdt=e.bdt=='%'?'%':'₹';bdate=dayStr(e.t);tab='bill';render()}
 const curTot=k=>k=='s'?totals(shown().map(line).filter(Boolean)).t:pcalc().tot;
 function advRef(k){const pay=k=='s'?bpay:ppay,rc=k=='s'?brecv:precv,e=$('#'+(k=='s'?'adv1':'adv2'));if(e)e.textContent=pay=='part'&&+rc>curTot(k)+0.005?'₹'+money(+rc-curTot(k))+' extra will be kept as advance':''}
 function livePcs(id){const l=cart.find(x=>x.id==id),it=db.items.find(x=>x.id==id)||{},pq=+it.pq>1?+it.pq:0,b=$('#kb'+id),p=$('#kp'+id);if(!l)return;const q=Math.round(((pq?(+(b&&b.value)||0)*pq:0)+(+(p&&p.value)||0))*1000)/1000;edTouch=1;l.q=q>0?q:0;cartUpd()}
@@ -1557,7 +1575,7 @@ function finish(p,lim){const ls=cart.map(line).filter(Boolean);if(!ls.length)ret
  const fin=o0||b;resetSale();recalc();save();flowLand();toast('Bill '+fin.no+(o0?' updated':' saved')+(extra>0?' · advance ₹'+money(extra)+' kept':''));billView(fin.id,0,o0?'updated':'saved');if(p)printBill(fin,1)}
 /* a cart line rebuilt from a saved bill / estimate line; c.o keeps what was saved so Revert and Cancel can go back to it */
 const savedLine=l=>{const it=db.items.find(x=>x.id==l.id),c={id:l.id||(db.items.find(i=>i.name==l.n)||{}).id||uid(),q:l.q,g:l.g,n:l.n,h:l.h,un:l.un,dv:l.dv,dt:l.dt};if(!it||l.p!=it.price)c.p=l.p;if(l.pp>0&&(!it||l.pp!=it.pp))c.pp=l.pp;c.o={q:l.q,p:c.p,pp:c.pp,dv:l.dv,dt:l.dt};return c};
-function editBill(id,skip){const b=db.bills.find(x=>x.id==id);if(!b||b.void)return;flowFrom();if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first, then edit the bill.');if(cart.length&&!skip&&!confirm('Replace the current cart with this bill for editing?'))return;
+function editBill(id,skip){const b=db.bills.find(x=>x.id==id);if(!b||b.void)return;flowFrom(null,1);if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first, then edit the bill.');if(cart.length&&!skip&&!confirm('Replace the current cart with this bill for editing?'))return;
  resetSale();editId=id;cart=b.lines.map(savedLine);bparty=b.pid||'';bwh=!!b.wh;bdv=b.bdv!==undefined?String(b.bdv):(b.bd?String(b.bd):'');bdt=b.bdt=='%'?'%':'₹';
  bpay=dueOf(b)>0.005?(b.paid>0?'part':'credit'):'full';bdate=dayStr(b.t);if(b.pm){bmode='Split';bsp=blankSp();b.pm.forEach(x=>bsp[x.m]=String(x.a))}else{bmode=b.mode||'Cash';brecv=bpay!='full'?String(b.paid):''}{const ad=advSum('pays',b,'Advance with bill ');if(ad>0){bpay='part';brecv=String(Math.round((b.paid+ad)*100)/100)}}
  closeAll();tab='bill';render()}
@@ -1571,7 +1589,7 @@ function pru(id,ru){const l=pcart.find(x=>x.id==id);if(!l)return;const o=l.ru||1
 function psetQ(id){const i=db.items.find(x=>x.id==id)||{},pq=+i.pq>1?+i.pq:1,b=$('#pkb'+id),p=$('#pkp'+id);const q=Math.round(((+(b&&b.value)||0)*pq+(+(p&&p.value)||0))*1000)/1000;pset(id,'q',q)}
 
 function padd(id){const i=db.items.find(x=>x.id==id),l=pcart.find(x=>x.id==id);if(!l)pcart.push({id,q:0,f:1,ru:+i.pq>1?+i.pq:1,r:+(((i.cost||0)-Math.min(+i.cf||0,+i.cost||0))*(+i.pq>1?+i.pq:1)*(1+((comp()||pgst=='n')?0:(i.gst??5))/100)).toFixed(2),g:i.gst??5,n:i.name,h:i.hsn||'',un:i.unit||'PCS'});render();edShow('p',id,1)}
-function editP(id){const p=db.purch.find(x=>x.id==id);if(!p||p.void)return;flowFrom();if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This purchase has a return. Cancel the debit note first, then edit the purchase.');if(pcart.length&&!confirm('Replace the current purchase draft with this bill for editing?'))return;
+function editP(id){const p=db.purch.find(x=>x.id==id);if(!p||p.void)return;flowFrom(null,1);if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This purchase has a return. Cancel the debit note first, then edit the purchase.');if(pcart.length&&!confirm('Replace the current purchase draft with this bill for editing?'))return;
  pEditId=id;pfr=p.fr?String(p.fr):'';pfs=p.frs?'s':'b';pfm=p.frm||'Cash';pfsp=blankSp();if(p.fpm){pfm='Split';p.fpm.forEach(x=>pfsp[x.m]=String(x.a))}pfw=p.fw||'v';pgst=p.ng?'n':'y';psup=p.sid;pno=p.no=='-'?'':p.no;pdate=dayStr(p.t);pmode=p.mode||'Cash';psp=blankSp();if(p.pm){pmode='Split';p.pm.forEach(x=>psp[x.m]=String(x.a))}ppay=p.paid>=p.total-0.005?'full':p.paid<=0?'credit':'part';precv=ppay=='part'?String(p.paid):ppay=='credit'?'0':'';{const ad=advSum('spays',p,'Advance with invoice ');if(ad>0){ppay='part';precv=String(Math.round((p.paid+ad)*100)/100)}}
  pcart=p.lines.map(l=>({id:l.id,q:l.q,f:1,ru:l.ru||1,r:+((l.rr??l.r)*(1+(l.g||0)/100)).toFixed(4),g:l.g,n:l.n,h:l.h,un:l.un,bt:l.bt,ex:l.ex}));closeAll();tab='purch';render()}
 function vPurch(){const P=pcalc();
@@ -1742,7 +1760,7 @@ try{if(/^https?:$/.test(location.protocol)){const l=document.createElement('link
  const m={name:'Shop Bill',short_name:'Shop Bill',start_url:location.href.split('#')[0],display:'standalone',background_color:'#f4f6fb',theme_color:'#1f5be0',icons:[{src:'data:image/svg+xml,'+encodeURIComponent(ic),sizes:'any',type:'image/svg+xml'}]};
  const l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));document.head.appendChild(l)}}catch(e){}
 try{const T=/^(INPUT|TEXTAREA|SELECT)$/,B=document.body;let tm;
- document.addEventListener('focusin',e=>{const t=e.target;if(!t||!T.test(t.tagName)||/^(checkbox|radio|button|file)$/.test(t.type))return;clearTimeout(tm);B.classList.add('kb');setTimeout(()=>{try{t.scrollIntoView({block:'center',behavior:'smooth'})}catch(x){}},280)});
+ document.addEventListener('focusin',e=>{const t=e.target;if(!t||!T.test(t.tagName)||/^(checkbox|radio|button|file)$/.test(t.type))return;clearTimeout(tm);B.classList.add('kb');setTimeout(()=>{try{const vv=window.visualViewport,vis=vv?vv.offsetTop+vv.height:innerHeight;if(t.getBoundingClientRect().bottom>vis-12)t.scrollIntoView({block:'nearest',behavior:'smooth'})}catch(x){}},280)});
  document.addEventListener('focusout',()=>{tm=setTimeout(()=>B.classList.remove('kb'),150)});
  if(window.visualViewport){const vv=window.visualViewport,f=()=>document.documentElement.style.setProperty('--kbh',Math.max(0,window.innerHeight-vv.height-vv.offsetTop)+'px');vv.addEventListener('resize',f);vv.addEventListener('scroll',f)}}catch(e){}
 /* ---------- storage: IndexedDB, record by record (no 5 MB ceiling), with rolling daily copies; localStorage is only the fallback ---------- */
