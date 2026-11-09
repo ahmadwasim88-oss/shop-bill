@@ -218,7 +218,10 @@ const dueOf=b=>b.total-(b.paid??b.total);
    - on a new bill (saved in the last hour) also what was entered as UPI / Bank, so the customer can scan and pay it */
 const FRESH=36e5;
 /* digital part (UPI / Card / Bank) of what was paid on a bill: the amount the customer is paying by QR right now */
-function billDig(b){const dig=m=>m=='Digital'||m=='UPI'||m=='Card'||m=='Bank';return Math.round((b.pm||(b.mode?[{m:b.mode,a:b.paid??b.total}]:[])).filter(x=>dig(x.m)).reduce((t,x)=>t+(+x.a||0),0)*100)/100}
+const isDigM=m=>m=='Digital'||m=='UPI'||m=='Card'||m=='Bank';
+function billDig(b){return Math.round((b.pm||(b.mode?[{m:b.mode,a:b.paid??b.total}]:[])).filter(x=>isDigM(x.m)).reduce((t,x)=>t+(+x.a||0),0)*100)/100}
+/* a receipt's digital amount: only a digital receipt that is new (fresh) or still recent (same window as bills) */
+function recDig(y,fresh){return!y.void&&isDigM(y.mode)&&(fresh||Date.now()-(y.u||y.t)<FRESH)?y.amt:0}
 function billPay(b){const lg=b.pid?ledger(b.pid):[],L=lg.find(x=>x.k=='b'&&x.r.id==b.id),later=!!L&&lg[lg.length-1]!==L,p=b.pid&&db.parties.find(x=>x.id==b.pid),bal=p?Math.max(0,Math.round((p.bal||0)*100)/100):0,
  dg=later||b.void||!(Date.now()-(b.u||b.t)<FRESH)?0:billDig(b),amt=bal>0.005?bal:dg;
  if(!(amt>0.005))return null;return{amt,due:bal>0.005,cur:bal>0.005&&!!L&&Math.abs(L.bal-bal)>0.005}}
@@ -273,7 +276,7 @@ function billDoc(b,includeCurrent){const bp=b.void?null:billPay(b),old=!!b.pid&&
  return{barcode:transactionBarcode('bill',b.id),title:(b.void?'CANCELLED ':'')+(compSch()?'BILL OF SUPPLY':shopSt()?'TAX INVOICE':'BILL'),meta:[['Invoice no',b.no],['Date',new Date(b.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',b.cust||'Walk-in'],...(b.cg?[['GSTIN',b.cg]]:[]),...(b.pos?[['Place of supply',b.pos+' '+(STATES[b.pos]||'')]]:[])],
  cols:[{h:'Item',w:.30},{h:'HSN',w:.13},{h:'Qty',w:.09,al:'r'},{h:'Rate',w:.17,al:'r'},{h:'GST',w:.09,al:'r'},{h:'Amount',w:.22,al:'r'}],rows:b.lines.map(l=>[l.n,l.h||'',qtxt(l),rateTxt(l),(l.g||0)+'%',money(lgross(l))]),sums,...(bp?{payAmt:bp.amt,payCur:old,payDue:bp.due}:{payAmt:0}),payOld:old,payRef:'Bill '+b.no}}
 function payDoc(y){const p=db.parties.find(x=>x.id==y.pid)||{name:''},L=ledger(y.pid).find(x=>x.k=='p'&&x.r.id==y.id);
- return{barcode:transactionBarcode('receipt',y.id),title:'PAYMENT RECEIPT',meta:[['Receipt no',y.no||'-'],['Date',new Date(y.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',p.name]],cols:[],rows:[],sums:sumGroups([['Received ('+(y.mode||'Cash')+')','₹'+money(y.amt),1]],L?BillLayout.balRows(L.pre,L.bal):[]),payAmt:p.bal>0.005?p.bal:0,payRef:'Receipt '+(y.no||'')}}
+ return{barcode:transactionBarcode('receipt',y.id),title:'PAYMENT RECEIPT',meta:[['Receipt no',y.no||'-'],['Date',new Date(y.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',p.name]],cols:[],rows:[],sums:sumGroups([['Received ('+(y.mode||'Cash')+')','₹'+money(y.amt),1]],L?BillLayout.balRows(L.pre,L.bal):[]),payAmt:recDig(y),payRef:'Receipt '+(y.no||'')}}
 function docPages(o,pay){
  const k=1.35,Wd=820,M=36,PH=1500,CW=Wd-2*M,C={br:'#1f5be0',ink:'#14201c',mut:'#5a6878',bg:'#f3f6fc',ln:'#e3e8f2',red:'#d93636'},s=db.shop,FN='system-ui,"Segoe UI",Roboto,sans-serif',F=(n,b)=>(b?'700 ':'500 ')+n+'px '+FN,
  mc=document.createElement('canvas').getContext('2d'),
@@ -766,7 +769,7 @@ Object.assign(IC2,{qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="1
 /* ---- scan-to-pay card for any amount: the screen shows a large QR, the shared or saved image also carries the bank details ---- */
 let _qr=null;
 function homeQr(){const e=$('#hq'),raw=String(e&&e.value||'').trim(),a=raw===''?null:Math.round(Number(raw)*100)/100;if(a!==null&&(!Number.isFinite(a)||a<=0))return bad('#hq','Enter a valid amount or leave it empty for an open-amount QR');if(a!==null&&a>1e7)return bad('#hq','That amount is too large for a UPI payment');qrShow(a,'')}
-function payQr(k,id){let a=0,ref='';if(k=='b'){const b=db.bills.find(x=>x.id==id);a=b?billDig(b):0;if(!(a>0.005))return toast('No digital payment on this bill');ref='Bill '+b.no}else{const p=db.parties.find(x=>x.id==id);a=p&&p.bal>0.005?Math.round(p.bal*100)/100:0;if(!a)return toast('Nothing pending for this customer');ref='Balance due'}qrShow(a,ref)}
+function payQr(k,id){let a=0,ref='';if(k=='b'){const b=db.bills.find(x=>x.id==id);a=b?billDig(b):0;if(!(a>0.005))return toast('No digital payment on this bill');ref='Bill '+b.no}else if(k=='y'){const y=db.pays.find(x=>x.id==id);a=y?recDig(y,1):0;if(!(a>0.005))return toast('No digital payment on this receipt');ref='Receipt '+(y.no||'')}else{const p=db.parties.find(x=>x.id==id);a=p&&p.bal>0.005?Math.round(p.bal*100)/100:0;if(!a)return toast('Nothing pending for this customer');ref='Balance due'}qrShow(a,ref)}
 function testQr(){qrShow(1,'Test payment',1)}
 function qrCardCanvas(a,ref,full){const s=db.shop,nm=(s.upn||s.name||'Shop').slice(0,30),hu=upiOk(s.upi),hb=bankOk();if(!hu&&!hb)return null;
  const G=hu?QR.make('upi://pay?pa='+s.upi+'&pn='+encodeURIComponent(nm)+(a!==null&&a>0.005?'&am='+(Math.round(a*100)/100).toFixed(2):'')+'&cu=INR&tn='+encodeURIComponent(ref||'Payment')):null;if(hu&&!G)return null;
@@ -1108,7 +1111,8 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
      type:'Payment receipt',no:y.no||'',t:y.t,tm:1,
      party:['Customer',p.name],hero:['Amount received',y.amt,'rcv'],
      settle:[['Received ('+esc(y.mode||'Cash')+')',rup(y.amt)],...balRows(L)],
-     cash:fresh?cashSpec(y,y.amt):null}}},
+     cash:fresh?cashSpec(y,y.amt):null,
+     act:recDig(y,fresh)>0.005?`<button class="btn o" onclick="payQr('y','${y.id}')">Show QR · ${rup(y.amt)}</button>`:''}}},
 
   spay:{
    coll:'spays',nm:'payment',freshDel:1,
