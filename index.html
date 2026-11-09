@@ -164,12 +164,42 @@ function discountEngine(sourceLines,billValue=bdv,billType=bdt){
 const line=l=>discountEngine([l],'','₹').lines[0]||null;
 function totals(ls){return discountEngine(ls)}
 const av=n=>`<div class="av">${esc((n||'?')[0]).toUpperCase()}</div>`;
+/* ---- sale: an item with no stock cannot be billed (estimates, purchases and "allow selling more than stock" are not affected).
+   It is stopped at the very first add-item step (list, search, barcode, scanner) and a stock purchase is offered first.
+   Saving that purchase brings the sale back and reopens the item's details; leaving the purchase just returns to the sale. ---- */
+let salePend=null;
+const sOut=i=>!isEst&&!db.shop.neg&&!(i.stock>1e-9)&&!(editId&&(db.bills.find(b=>b.id==editId)||{lines:[]}).lines.some(l=>l.id==i.id&&l.q>0));
+function outSheet(i){sheet(i.name+' has no stock. Add stock first, then continue with its details.',[['box','Add stock (purchase)',`stockFirst(${i.id})`]])}
+function stockFirst(id){const d=$('#ied'),go=()=>buyItem(id,1);stopScan();edPend=null;if(d&&d.open){d.addEventListener('close',go,{once:true});d.close()}else go()} /* wait for the picker's own close handling to finish, or it resets the details pop-up that the purchase opens */
+function saleResume(ok){const id=salePend;salePend=null;tab='bill';render();const i=ok&&db.items.find(x=>x.id==id);if(i&&!sOut(i))add(id)}
 function addCode(c){const i=db.items.find(x=>x.code==c);if(i)add(i.id);else{if(confirm('Barcode '+c+' not found. Add as new item?')){itemForm(0,c);saleAddFlag=true}}}
-function add(id){const l=cart.find(x=>x.id==id);if(!l)cart.push({id,q:0});else if(l.q>0){edPre={...l};l.q+=1}edShow('s',id,1);render()}
+function add(id){const i0=db.items.find(x=>x.id==id);if(i0&&sOut(i0))return outSheet(i0);const l=cart.find(x=>x.id==id);if(!l)cart.push({id,q:0});else if(l.q>0){edPre={...l};l.q+=1}edShow('s',id,1);render()}
 function rmLine(id){cart=cart.filter(x=>x.id!=id);render()}
 function setq(id,v){const l=cart.find(x=>x.id==id);if(!l)return;v=Math.round((+v||0)*1000)/1000;edTouch=1;l.q=v>0?v:0;render()}
 function qty(id,d){const l=cart.find(x=>x.id==id);setq(id,Math.round((l.q+d)*1000)/1000)}
 let bwh=false,bparty='',brecv='',bmode='Cash',editId='',bpay='full',bdv='',bdt='₹',bsp=blankSp(),bdate='',isEst=false,estId='',editEstId='',rmAck=0;
+/* ---- Hold cart (sale and estimate): ONE snapshot + ONE restore serve both. Held carts live on this phone only (localStorage), apart from the shop data.
+   Hold saves the whole active cart (items, customer, price level, discount, payment choices, date), clears the screen for the next customer, and the
+   "Held Bills (N)" chip lists them. Recalling one while another cart is active holds that one first, so nothing is lost. A saved bill being edited cannot be held. ---- */
+let HELD=[];try{HELD=JSON.parse(localStorage.getItem('shopbill_held')||'[]')}catch(e){}
+function heldSave(){try{localStorage.setItem('shopbill_held',JSON.stringify(HELD))}catch(e){}}
+function heldOf(){return HELD.filter(h=>h.est==isEst)}
+function canHold(){return!editId&&!editEstId&&shown().length>0}
+function heldSnap(){const ls=shown().map(line).filter(Boolean),pt=db.parties.find(x=>x.id==bparty);
+ return{id:uid(),t:Date.now(),est:isEst,n:ls.length,tot:totals(ls).t,cust:pt?pt.name:'',nm:ls.slice(0,2).map(l=>l.i.name).join(', ')+(ls.length>2?' +'+(ls.length-2)+' more':''),s:JSON.parse(JSON.stringify({cart:shown(),bparty,brecv,bmode,bpay,bdv,bdt,bsp,bdate,bwh,estId}))}}
+function holdCart(){if(!canHold())return warn('Add items first');const e=isEst;HELD.unshift(heldSnap());heldSave();resetSale();isEst=e;render();toast((e?'Estimate':'Bill')+' held · ready for the next customer')}
+function holdRecall(id){const k=HELD.findIndex(x=>x.id==id);if(k<0)return;const h=HELD.splice(k,1)[0];if(canHold())HELD.unshift(heldSnap());
+ const x=h.s;resetSale();isEst=!!h.est;cart=x.cart;bparty=x.bparty;brecv=x.brecv;bmode=x.bmode;bpay=x.bpay;bdv=x.bdv;bdt=x.bdt;bsp=x.bsp;bdate=x.bdate;bwh=x.bwh;estId=x.estId||'';heldSave();render();toast('Held '+(h.est?'estimate':'bill')+' recalled')}
+function holdList(){const L=heldOf();if(!L.length)return;const w=isEst?'estimate':'bill',tm=t=>new Date(t).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),cut='display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+ $('#shb').innerHTML=`<div class="sht" style="padding:2px 6px">Held ${w}s · tap one to bring it back</div><div style="max-height:56vh;overflow:auto">${L.map(h=>`<div style="display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:10px;margin:4px 0;padding:0 2px 0 10px"><button type="button" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:none;color:var(--ink);text-align:left;padding:5px 0" onclick="$('#sheet').close();holdRecall('${h.id}')"><span style="flex:1;min-width:0;line-height:1.3"><b style="${cut};font-size:14px">${esc(h.cust||'Walk-in customer')}</b><span class="m" style="${cut};font-size:12px">${esc(h.nm||h.n+' item'+(h.n==1?'':'s'))} · ${tm(h.t)}</span></span><b style="font-size:14px;white-space:nowrap">₹${money(h.tot)}</b></button><button class="ib s" style="color:var(--red)" onclick="holdAsk('${h.id}')" aria-label="Delete held ${w}">${ic('del')}</button></div>`).join('')}</div><button class="shi x" style="padding:6px 8px" onclick="$('#sheet').close()">Cancel</button>`;$('#sheet').showModal()}
+function holdAsk(id){$('#sheet').close();ask('Delete this held '+(isEst?'estimate':'bill')+'? It cannot be brought back.','Yes, delete',"holdDel('"+id+"')")}
+function holdDel(id){HELD=HELD.filter(h=>h.id!=id);heldSave();render();if(heldOf().length)holdList()}
+function holdGo(est){est?newEst():newSale();holdList()}
+function heldHome(){const b=HELD.filter(h=>!h.est).length,e=HELD.length-b,c=(l,n,x)=>n?`<button type="button" class="chip on" style="padding:1px 9px;font-size:12px;font-weight:700" onclick="holdGo(${x})">${l} ${n}</button>`:'';
+ return b||e?`<span style="display:flex;align-items:center;gap:5px"><span class="m">Held</span>${c('Bills',b,0)}${c('Est',e,1)}</span>`:''}
+function holdSwitch(){const e=!isEst,had=canHold();if(had){HELD.unshift(heldSnap());heldSave()}resetSale();isEst=e;render();if(had)toast('Cart held');holdList()}
+function heldChip(){if(editId||editEstId)return'';const n=heldOf().length,o=HELD.length-n;
+ return(n?`<button type="button" class="chip on" style="font-weight:700" onclick="holdList()">Held ${isEst?'Estimates':'Bills'} (${n})</button>`:'')+(o?`<button type="button" class="chip" style="margin-left:6px;font-size:12px" onclick="holdSwitch()">${isEst?'Bills':'Estimates'} (${o})</button>`:'')}
 
 /* ---------- items ---------- */
 /* ---------- ONE scroll memory ----------
@@ -187,8 +217,10 @@ const dueOf=b=>b.total-(b.paid??b.total);
    - the customer's CURRENT balance (final balance, not just this bill), so a bill reprinted after everything was settled shows nothing
    - on a new bill (saved in the last hour) also what was entered as UPI / Bank, so the customer can scan and pay it */
 const FRESH=36e5;
-function billPay(b){const lg=b.pid?ledger(b.pid):[],L=lg.find(x=>x.k=='b'&&x.r.id==b.id),later=!!L&&lg[lg.length-1]!==L,p=b.pid&&db.parties.find(x=>x.id==b.pid),bal=p?Math.max(0,Math.round((p.bal||0)*100)/100):0,dig=m=>m=='Digital'||m=='UPI'||m=='Card'||m=='Bank',
- pm=(!b.void&&Date.now()-(b.u||b.t)<FRESH)?(b.pm||(b.mode?[{m:b.mode,a:b.paid??b.total}]:[])):[],dg=later?0:Math.round(pm.filter(x=>dig(x.m)).reduce((t,x)=>t+(+x.a||0),0)*100)/100,amt=bal>0.005?bal:dg;
+/* digital part (UPI / Card / Bank) of what was paid on a bill: the amount the customer is paying by QR right now */
+function billDig(b){const dig=m=>m=='Digital'||m=='UPI'||m=='Card'||m=='Bank';return Math.round((b.pm||(b.mode?[{m:b.mode,a:b.paid??b.total}]:[])).filter(x=>dig(x.m)).reduce((t,x)=>t+(+x.a||0),0)*100)/100}
+function billPay(b){const lg=b.pid?ledger(b.pid):[],L=lg.find(x=>x.k=='b'&&x.r.id==b.id),later=!!L&&lg[lg.length-1]!==L,p=b.pid&&db.parties.find(x=>x.id==b.pid),bal=p?Math.max(0,Math.round((p.bal||0)*100)/100):0,
+ dg=later||b.void||!(Date.now()-(b.u||b.t)<FRESH)?0:billDig(b),amt=bal>0.005?bal:dg;
  if(!(amt>0.005))return null;return{amt,due:bal>0.005,cur:bal>0.005&&!!L&&Math.abs(L.bal-bal)>0.005}}
 const IC2={wa:'<path d="M21 12a9 9 0 01-13.4 7.8L3 21l1.3-4.4A9 9 0 1121 12z"/>',sms:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>',share:'<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.5l6.8-4M8.6 13.5l6.8 4"/>',print:'<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M7 14h10v7H7z"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/>',del:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',undo:'<path d="M9 14L4 9l5-5M4 9h11a5 5 0 010 10h-3"/>',doc:'<path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6"/>'};
 let PER={r:'all'},plBy='item';
@@ -326,20 +358,22 @@ const scanPick=(r,s)=>{const w=s.videoWidth||s.width,h=s.videoHeight||s.height,d
 /* success / unknown flash on the scan window (the sound is separate) */
 function scanFlash(k){const e=$('.scan-stage');if(!e)return;e.classList.remove('ok','bad');void e.offsetWidth;e.classList.add(k);clearTimeout(scanFlash.t);scanFlash.t=setTimeout(()=>e.classList.remove(k),700)}
 /* Bill scanning (sale / estimate): the camera stays open, every scan adds the item at once (no pop-up) and the list below the camera shows what is on the bill. */
-let scanKeep=false,scanLastCode='',scanLastAt=0,scUnk='',scanLastId=null;const SCAN_GAP=600; /* ms the same code must be out of view before it counts again */
+let scanKeep=false,scanLastCode='',scanLastAt=0,scUnk='',scOut=0,scanLastId=null;const SCAN_GAP=600; /* ms the same code must be out of view before it counts again */
 function scannerAccept(value){const c=String(value||'').trim();if(!c)return warn('Enter or scan a barcode first');
  if(scanKeep){const n=Date.now();if(c===scanLastCode&&n-scanLastAt<SCAN_GAP){scanLastAt=n;return}scanLastCode=c;scanLastAt=n;scBillAdd(c);return}
  const cb=scanCallback;scanCallback=null;stopScan();scannerBeep();if(cb)cb(c)}
 function scanManual(){const e=$('#scanManualInput');if(!e)return;if(scanKeep)scanLastCode='';scannerAccept(e.value);if(scanKeep)e.value=''}
 function billScan(){scan(()=>{},'bill')}
 function scBillAdd(c){const i=db.items.find(x=>x.code==c);
- if(!i){scUnk=c;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
- scUnk='';const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1});
+ if(!i){scUnk=c;scOut=0;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
+ if(sOut(i)){scUnk='';scOut=i.id;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
+ scUnk='';scOut=0;const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1});
  scanLastId=i.id;scannerBeep();scanFlash('ok');const st=$('#scanStatus');if(st)st.textContent='Added · '+i.name;render();scBillDraw();const sl=$('#scl');if(sl)sl.scrollTop=0}
 function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l||(d<-1&&l.q+d<-1e-9))return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
+function scAddStock(){const id=scOut;scOut=0;stopScan();stockFirst(id)}
 function scAddUnknown(){const c=scUnk;stopScan();itemForm(0,c);saleAddFlag=true}
 function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cart.map(line).filter(Boolean),T=totals(ls),first=scanLastId,ord=[...ls].reverse().sort((a,b)=>(b.id==first)-(a.id==first)),u=$('#scUnk');
- if(u)u.innerHTML=scUnk?`<div class="scu"><span>Unknown code <b>${esc(scUnk)}</b></span><button onclick="scAddUnknown()">Add item</button><button class="x" onclick="scUnk='';scBillDraw()" aria-label="Dismiss">✕</button></div>`:'';
+ if(u)u.innerHTML=scUnk?`<div class="scu"><span>Unknown code <b>${esc(scUnk)}</b></span><button onclick="scAddUnknown()">Add item</button><button class="x" onclick="scUnk='';scBillDraw()" aria-label="Dismiss">✕</button></div>`:scOut?`<div class="scu"><span><b>${esc((db.items.find(x=>x.id==scOut)||{}).name||'Item')}</b> is out of stock</span><button onclick="scAddStock()">Add stock</button><button class="x" onclick="scOut=0;scBillDraw()" aria-label="Dismiss">✕</button></div>`:'';
  p.innerHTML=ord.map(l=>{const i=l.i,m=lineIssues(l)[0],pq=+i.pq>1?+i.pq:0,
   st=(v,u,dn,up,off)=>`<div class="stp"><button onclick="scQty(${l.id},${dn})" aria-label="Less" ${off?'disabled':''}>−</button><span class="q"><b>${v}</b> <small>${u}</small></span><button onclick="scQty(${l.id},${up})" aria-label="More">+</button></div>`,
   top=`<div class="gr"><b>${esc(i.name)}</b>${m?`<span class="e">${esc(issText(m))}</span>`:''}</div>`,amt=`<b class="amt">₹${money(l.amt)}</b>`;
@@ -350,7 +384,7 @@ function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cart.map(line).fil
 async function scan(cb,context='item'){
  if(!('BarcodeDetector'in window))return warn('Barcode scanning needs Chrome on Android. You can type the barcode in the search field instead.');
  const dlg=$('#sc'),v=$('#vid');if(!dlg||!v)return warn('Scanner is unavailable');
- scanCallback=cb;scanBusy=false;scanKeep=context==='bill';scanLastCode='';scanLastAt=0;scUnk='';scanLastId=null;dlg.classList.toggle('bill',scanKeep);if(scannerSound){try{const A=window.AudioContext||window.webkitAudioContext;if(A&&!scanAudio)scanAudio=new A();if(scanAudio&&scanAudio.state==='suspended')scanAudio.resume().catch(()=>{})}catch(e){}}const title=$('#scanTitle'),sub=$('#scanSubtitle'),status=$('#scanStatus'),sound=$('#scanSound'),manual=$('#scanManualInput');scannerResetTorch();
+ scanCallback=cb;scanBusy=false;scanKeep=context==='bill';scanLastCode='';scanLastAt=0;scUnk='';scOut=0;scanLastId=null;dlg.classList.toggle('bill',scanKeep);if(scannerSound){try{const A=window.AudioContext||window.webkitAudioContext;if(A&&!scanAudio)scanAudio=new A();if(scanAudio&&scanAudio.state==='suspended')scanAudio.resume().catch(()=>{})}catch(e){}}const title=$('#scanTitle'),sub=$('#scanSubtitle'),status=$('#scanStatus'),sound=$('#scanSound'),manual=$('#scanManualInput');scannerResetTorch();
  if(title)title.textContent=context==='transaction'||context==='quick'?'Scan item or transaction':'Scan item barcode';
  if(sub)sub.textContent=context==='transaction'?'Item codes find related transactions · document codes open the document':context==='quick'?'Item barcodes open items · document barcodes open transactions':'Find an item by its barcode';
  if(scanKeep){if(title)title.textContent='Scan items to bill';if(sub)sub.textContent='Each scan adds 1 · move the pack away and back to add more';scBillDraw()}
@@ -732,7 +766,7 @@ Object.assign(IC2,{qr:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="1
 /* ---- scan-to-pay card for any amount: the screen shows a large QR, the shared or saved image also carries the bank details ---- */
 let _qr=null;
 function homeQr(){const e=$('#hq'),raw=String(e&&e.value||'').trim(),a=raw===''?null:Math.round(Number(raw)*100)/100;if(a!==null&&(!Number.isFinite(a)||a<=0))return bad('#hq','Enter a valid amount or leave it empty for an open-amount QR');if(a!==null&&a>1e7)return bad('#hq','That amount is too large for a UPI payment');qrShow(a,'')}
-function payQr(k,id){let a=0,ref='';if(k=='b'){const b=db.bills.find(x=>x.id==id),bp=b&&billPay(b);if(!bp)return toast('Nothing to collect on this bill');a=bp.amt;ref=bp.cur?'Current balance':'Bill '+b.no}else{const p=db.parties.find(x=>x.id==id);a=p&&p.bal>0.005?Math.round(p.bal*100)/100:0;if(!a)return toast('Nothing pending for this customer');ref='Balance due'}qrShow(a,ref)}
+function payQr(k,id){let a=0,ref='';if(k=='b'){const b=db.bills.find(x=>x.id==id);a=b?billDig(b):0;if(!(a>0.005))return toast('No digital payment on this bill');ref='Bill '+b.no}else{const p=db.parties.find(x=>x.id==id);a=p&&p.bal>0.005?Math.round(p.bal*100)/100:0;if(!a)return toast('Nothing pending for this customer');ref='Balance due'}qrShow(a,ref)}
 function testQr(){qrShow(1,'Test payment',1)}
 function qrCardCanvas(a,ref,full){const s=db.shop,nm=(s.upn||s.name||'Shop').slice(0,30),hu=upiOk(s.upi),hb=bankOk();if(!hu&&!hb)return null;
  const G=hu?QR.make('upi://pay?pa='+s.upi+'&pn='+encodeURIComponent(nm)+(a!==null&&a>0.005?'&am='+(Math.round(a*100)/100).toFixed(2):'')+'&cu=INR&tn='+encodeURIComponent(ref||'Payment')):null;if(hu&&!G)return null;
@@ -773,7 +807,7 @@ function flowReturn(){const o=navStack.pop();if(!o){go('home');return}
  tab=o.tab;rpt=o.rpt;rptH=o.rptH;rptFrom=o.rptFrom;render();
  if(o.pages.length){pst=o.pages;const d=$('#dlg');if(!d.open)d.showModal();drawP(2)}else if(o.view)try{o.view()}catch(e){}}
 const flowLand=flowReturn,flowBack=flowReturn;
-function go(t){if(t=='bill'||t=='purch')flowFrom();else navStack.length=0;if(t=='reports')rpt='';tab=t;render()}
+function go(t){if(t=='bill'||t=='purch')flowFrom();else{navStack.length=0;salePend=null}if(t=='reports')rpt='';tab=t;render()}
 /* a row of chips can scroll sideways; after every redraw, bring the selected one back into view */
 function keepChips(){try{requestAnimationFrame(()=>document.querySelectorAll('.chips').forEach(c=>{const a=c.querySelector('.chip.on');if(a&&c.scrollWidth>c.clientWidth)c.scrollLeft=Math.max(0,a.offsetLeft-(c.clientWidth-a.offsetWidth)/2)}))}catch(e){}}
 function render(){if(tab!==_rt){tabSy[_rt]=scrollY;itemQ=partyQ=txQ='';_rt=tab;tabNew=1}keepChips();const flow=tab=='bill'||tab=='purch',sub=!flow&&tab!='home';document.body.classList.toggle('flow',flow);
@@ -785,15 +819,15 @@ function setStatus(t){stx=t;const e=$('#sx');if(e)e.textContent=t;const s=$('#ss
 function sset(k,v){db.shop[k]=v;db.shop.u=Date.now();if(k=='name'){const e=$('.ht b');if(e&&tab=='home')e.textContent=v}save()}
 function edReset(){try{edPend=null;const d=$('#ied');if(d&&d.open)d.close()}catch(e){}}
 function restoreRemoved(){const ob=db.bills.find(x=>x.id==editId);if(!ob)return;ob.lines.forEach(l=>{if(!cart.some(c=>c.id==l.id))cart.push(savedLine(l))});render();toast('Removed items put back')}
-function resetSale(){edReset();rmAck=0;bwh=false;editId='';editEstId='';cart=[];bparty='';brecv='';bpay='full';bdv='';bdt='₹';bsp=blankSp();bdate='';bmode='Cash';isEst=false;estId=''}
+function resetSale(){salePend=null;edReset();rmAck=0;bwh=false;editId='';editEstId='';cart=[];bparty='';brecv='';bpay='full';bdv='';bdt='₹';bsp=blankSp();bdate='';bmode='Cash';isEst=false;estId=''}
 function resetPurch(){edReset();pEditId='';pcart=[];psup='';pno='';ppay='full';precv='';pgst='y';pfr='';pfs='b';pfm='Cash';pfsp=blankSp();pfw='v'}
 function leaveFlow(ok){
  if(tab=='bill'){if(cart.length&&!ok&&(ask(editId?'Discard your changes? The saved bill stays as it was.':'Discard this sale?',editId?'Yes, discard changes':'Yes, discard','leaveFlow(1)'),1))return;resetSale();flowBack();return}
- if(tab=='purch'){if(pcart.length&&!ok&&(ask('Discard this purchase?','Yes, discard','leaveFlow(1)'),1))return;resetPurch();flowBack();return}
+ if(tab=='purch'){if(pcart.length&&!ok&&(ask('Discard this purchase?','Yes, discard','leaveFlow(1)'),1))return;resetPurch();if(salePend){saleResume(0);return}flowBack();return}
  if(tab=='reports'&&rpt)rptBack();else if(tab!='home')go('home')}
 
 function newSale(){flowFrom();if(editId||isEst||estId)resetSale();closeAll();tab='bill';render()}
-function newPurch(){flowFrom();if(pEditId)resetPurch();closeAll();if(!pdate)pdate=today();tab='purch';render()}
+function newPurch(){salePend=null;flowFrom();if(pEditId)resetPurch();closeAll();if(!pdate)pdate=today();tab='purch';render()}
 
 /* pickers */
 let pickCb=null,pickQ='',pickBase=0;
@@ -834,7 +868,7 @@ function itemView(id,rep,fresh){const i0=db.items.find(x=>x.id==id);if(!i0)retur
   ()=>{const it=db.items.find(x=>x.id==id)||{};return B.edit(`itemForm(${id})`)+fa('box','Add stock',`buyItem(${id})`)+(it.hide?fa('undo','Unhide',`hideItem(${id},0)`):B.del(`delItem(${id})`))+B.nw('pgBack();itemForm(0)','New item')+B.close()},rep)}
 
 
-function buyItem(id){flowFrom();closeAll();if(pEditId)resetPurch();if(!pdate)pdate=today();tab='purch';padd(id)}
+function buyItem(id,fs){salePend=fs?id:null;flowFrom();closeAll();if(pEditId)resetPurch();if(!pdate)pdate=today();tab='purch';padd(id)}
 const itemUses=id=>[db.bills,db.purch,db.notes,db.est].reduce((t,a)=>t+a.filter(r=>!r.void&&r.lines.some(l=>l.id==id)).length,0);
 function hideItem(id,on){const i=db.items.find(x=>x.id==id);if(!i)return;if(on)i.hide=true;else delete i.hide;i.u=Date.now();cart=cart.filter(x=>x.id!=id);save();render();toast(on?'Item hidden':'Item is back in your lists');pgBack();pgRefresh()}
 function delItem(id,ok){const n=itemUses(id);if(n){ask('This item is on '+n+' bill'+(n==1?'':'s')+', purchase'+(n==1?'':'s')+' or note'+(n==1?'':'s')+', so deleting it would break their profit and stock history. Hide it from your lists instead?','Yes, hide it',"hideItem('"+id+"',1)");return}if(!ok&&(ask('Delete this item? Past bills keep its name.','Yes, delete',"delItem('"+id+"',1)"),1))return;db.items=db.items.filter(x=>x.id!=id);db.tomb[id]=Date.now();cart=cart.filter(x=>x.id!=id);save();toast('Item deleted');pgClose()}
@@ -911,22 +945,15 @@ const taxLine=o=>['Taxable '+rup(o.tx)+(o.tax>0.004?(o.ig?' · IGST '+rup(o.tax)
 
 /* ---- cash tendered & change: ONE calculator for every summary page ----
    A summary only adds  cash:fresh?cashSpec(record,amount):null  to its spec (money coming IN, right after saving); sumView draws it through cashBox().
-   Chips = the exact amount, then the next round-ups in real Indian note/coin steps (10, 50, 100, 500, 1000),
-   so Rs 340 offers 350 / 400 / 500 and Rs 11 offers 20 / 50 / 100 (never a 15, there is no single note or coin for it).
-   Any other amount, such as 15, is typed in the box. */
+   One row: label, the cash received, and the result (Return Change, or Short by). */
 let CT={k:'',v:'',d:0};
-const CSTEP=[10,50,100,500,1000],
- cashPart=(r,amt)=>Array.isArray(r.pm)&&r.pm.length?r.pm.reduce((t,x)=>t+(String(x.m).toLowerCase()=='cash'?+x.a||0:0),0):String(r.mode||'Cash').toLowerCase()=='cash'?amt:0,
+const cashPart=(r,amt)=>Array.isArray(r.pm)&&r.pm.length?r.pm.reduce((t,x)=>t+(String(x.m).toLowerCase()=='cash'?+x.a||0:0),0):String(r.mode||'Cash').toLowerCase()=='cash'?amt:0,
  cashSpec=(r,amt)=>r.void?null:{due:r2c(cashPart(r,amt))},
- cashChips=d=>{const c=Math.round(d*100),u=[...new Set(CSTEP.map(x=>Math.ceil(c/(x*100))*x*100).filter(v=>v>c))].sort((a,b)=>a-b).slice(0,3);if(!u.length){const b=Math.floor(c/50000)*50000+50000;u.push(b,b+50000)}return[c,...u].map(v=>v/100)},
- cashInner=()=>{const t=+CT.v||0,ch=Math.round((t-CT.d)*100)/100;
-  return `<div class="chips" style="padding:4px 0 0">${cashChips(CT.d).map((v,k)=>`<button type="button" class="chip${t&&Math.abs(v-t)<.005?' on':''}" style="padding:2px 9px;font-size:12px" onclick="cashSet(${v})">${k?'':'Exact '}₹${money(v)}</button>`).join('')}</div>`
-   +`<div style="text-align:right;min-height:20px">${CT.v===''?'':t<CT.d-0.005?`<b class="due">Short by ₹${money(CT.d-t)}</b>`:`<b class="${ch>0.004?'rcv':''}">Return Change: ₹${money(ch)}</b>`}</div>`},
+ cashInner=()=>{const t=+CT.v||0,ch=Math.round((t-CT.d)*100)/100;return CT.v===''?'':t<CT.d-0.005?`<b class="due">Short by ₹${money(CT.d-t)}</b>`:`<b class="${ch>0.004?'rcv':''}">Return Change: ₹${money(ch)}</b>`},
  cashDraw=()=>{const e=$('#cashx');if(e)e.innerHTML=cashInner()},
- cashSet=v=>{const i=$('#cashi');if(i)i.value=v;CT.v=String(v);cashDraw()},
  cashIn=el=>{CT.v=el.value;cashDraw()},
  cashBox=(c,key)=>{if(!c||c.due<0.005)return'';if(CT.k!=key)CT={k:key,v:'',d:0};CT.d=c.due;
-  return `<div class="c" style="padding:8px 10px"><div style="display:flex;align-items:center;gap:6px"><b style="white-space:nowrap">Cash tendered :</b><input id="cashi" type="number" inputmode="decimal" min="0" value="${esc(CT.v)}" placeholder="0" oninput="cashIn(this)" style="flex:none;width:84px;min-height:30px;margin:0;padding:2px 8px;font-size:14px"><span class="m" style="margin-left:auto;white-space:nowrap">Cash to settle ₹${money(c.due)}</span></div><div id="cashx">${cashInner()}</div></div>`};
+  return `<div style="margin:6px 2px 0;padding:0 9px"><div class="m" style="display:flex;align-items:center;gap:6px"><span style="white-space:nowrap">Cash tendered :</span><input id="cashi" type="number" inputmode="decimal" min="0" value="${esc(CT.v)}" placeholder="0" oninput="cashIn(this)" style="flex:none;width:80px;min-height:26px;margin:0;padding:1px 7px;font-size:13px"><span id="cashx" style="margin-left:auto;white-space:nowrap;font-size:13px">${cashInner()}</span></div></div>`};
 
 /* ---- the renderer: every summary page is drawn here ----
    o = { void, fresh, info            banner text (cancelled / saved / note)
@@ -1007,9 +1034,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
    nw:()=>['newSale()','New sale'],
    spec(b,fresh){
     const ro=b.ro||0,tx=b.total-ro-b.tax,due=dueOf(b),
-     balanceDisplay=BillBalanceDisplay.get(b),
-     isLatestTransaction=balanceDisplay.latest===true,
-     pay=!b.void&&isLatestTransaction?billPay(b):null,
+     pay=!b.void&&fresh?billDig(b):0,
      profit=b.void?null:billProfit(b);
     return{
      void:b.void&&'This bill is cancelled',fresh:fresh&&'Bill '+b.no+' '+fresh,
@@ -1020,7 +1045,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
      ret:retRows(b,0,rupS),
      settle:[...BillLayout.settle(b).rows.map(([l,v])=>[l,rup(v)]),...(due>0.005?[['Due',rup(due),'d']]:[]),...BillBalanceDisplay.rows(b)],
      cash:fresh?cashSpec(b,b.paid??b.total):null,
-     act:(pay?`<button class="btn o" onclick="payQr('b','${b.id}')">Show QR · ${rup(pay.amt)}</button>`:''),
+     act:pay>0.005?`<button class="btn o" onclick="payQr('b','${b.id}')">Show QR · ${rup(pay)}</button>`:'',
      priv:profit==null?null:{rows:[profitRow('Profit on this bill',profit,tx)]}}}},
 
   est:{
@@ -1083,8 +1108,7 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
      type:'Payment receipt',no:y.no||'',t:y.t,tm:1,
      party:['Customer',p.name],hero:['Amount received',y.amt,'rcv'],
      settle:[['Received ('+esc(y.mode||'Cash')+')',rup(y.amt)],...balRows(L)],
-     cash:fresh?cashSpec(y,y.amt):null,
-     act:!y.void&&p.bal>0.005?`<button class="btn o" onclick="payQr('c','${y.pid}')">Show QR · ${rup(p.bal)}</button>`:''}}},
+     cash:fresh?cashSpec(y,y.amt):null}}},
 
   spay:{
    coll:'spays',nm:'payment',freshDel:1,
@@ -1258,7 +1282,7 @@ function vHome(){const dn=new Date().toDateString(),td=db.bills.filter(b=>!b.voi
   cur=c=>(c<0?'−':'')+'₹'+money(Math.abs(c)/100),sg=c=>c>0?'+'+cur(c):cur(c),tn=c=>c>0?'rcv':c<0?'due':'',
   mc=(cl,i,l,v,t,a,b)=>`<div class="k ${cl}"><span class="ki-head">${ic(i)} ${l}</span><b class="${t}">${v}</b><span class="ki-sub">${a}</span><span class="ki-sub">${b}</span></div>`;
  return `${setup}<div class="kpis"><div class="k k-sales"><span class="ki-head">${ic('bag')} Sales</span><b>₹${money(td.reduce((s,b)=>s+b.total,0))}</b><span class="ki-sub">${td.length} bill${td.length==1?'':'s'} · today</span></div><div class="k k-purchase"><span class="ki-head">${ic('box')} Purchases</span><b>₹${money(tp.reduce((s,p)=>s+p.total,0))}</b><span class="ki-sub">${tp.length} bill${tp.length==1?'':'s'} · today</span></div><div class="k k-credit"><span class="ki-head">${ic('coin')} Credit given</span><b>₹${money(credit)}</b><span class="ki-sub">Today</span></div>${mc('k-in','down','Money in',cur(iT),tn(iT),'Cash '+cur(iC),'Digital '+cur(iD))}${mc('k-out','up','Money out',cur(oT),oT>0?'due':'','Cash '+cur(oC),'Digital '+cur(oD))}${mc('k-net','list','Net',cur(nT),tn(nT),'Cash '+sg(nC),'Digital '+sg(nD))}</div><div class="kpis kp2"><div class="k k-in tap" onclick="partyT='c';go('people')"><span class="ki-head">${ic('people')} To collect</span><b class="rcv">₹${money(toGet)}</b></div><div class="k k-out tap" onclick="partyT='s';go('people')"><span class="ki-head">${ic('box')} To pay</span><b class="due">₹${money(toGive)}</b></div></div>
- <div class="sec">Quick actions</div><div class="tiles">${ti('newSale()','bag','Sale','p')}${ti('newPurch()','box','Purchase')}${ti('recvPick()','down','Receive')}${ti('paySPick()','up','Pay supplier')}${ti('expForm()','coin','Expense')}${ti('newEst()','doc','Estimate')}</div>
+ <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div class="sec">Quick actions</div>${heldHome()}</div><div class="tiles">${ti('newSale()','bag','Sale','p')}${ti('newPurch()','box','Purchase')}${ti('recvPick()','down','Receive')}${ti('paySPick()','up','Pay supplier')}${ti('expForm()','coin','Expense')}${ti('newEst()','doc','Estimate')}</div>
  <div class="sec">Manage</div><div class="tiles">${ti("go('items')",'box','Items','m',db.items.filter(i=>!i.hide).length+' items')}${ti("partyT='c';go('people')",'people','People','m',db.parties.length+' customers')}${ti("openRpt('t')",'list','Transactions','m',txnAll().filter(x=>!x.v&&new Date(x.t).toDateString()==dn).length+' today')}</div>
  ${bkBanner()}<div class="card qrc"><div class="line qrc-row" style="gap:8px;margin:0"><span class="qri">${ic('qr')}</span><input id="hq" type="number" inputmode="decimal" step="any" min="0" placeholder="Amount (₹)" aria-label="Amount to collect" onkeydown="if(event.key==='Enter')homeQr()"><button class="btn" style="flex:none;padding:0 20px" onclick="homeQr()">Show QR</button></div></div>
  ${need?'<div class="sec">Needs attention</div>':''}
@@ -1410,12 +1434,12 @@ let edK=null,edT='s',edNew=false,edLast=null,edPend=null,edPT='s',edQ0=0,edSnap=
    Typing hides Quick Access and shows matches; edList draws whatever the panel shows. */
 const EDP={s:{add:'add',code:'addCode',scan:'billScan()',price:i=>'₹'+money(tierItem(i).price)},p:{add:'padd',code:'paddCode',scan:"scan(c=>paddCode(c),'item')",price:i=>i.cost?'₹'+money(gcost(i)):''}};
 function edFreq(t){const s=t=='s',c={},n={};(s?db.bills:db.purch).forEach(b=>{if(!b.void)b.lines.forEach(l=>{if(l.id)c[l.id]=(c[l.id]||0)+(!s&&psup&&b.sid==psup?1000:1)})});if(!s)db.bills.forEach(b=>{if(!b.void)b.lines.forEach(l=>{if(l.id)n[l.id]=(n[l.id]||0)+1})});
- const inC=new Set((s?cart:pcart).map(l=>l.id));return db.items.filter(i=>!i.hide&&!inC.has(i.id)&&(c[i.id]>0||n[i.id]>0)).sort((a,b)=>(c[b.id]||0)-(c[a.id]||0)||(n[b.id]||0)-(n[a.id]||0)||a.name.localeCompare(b.name)).slice(0,4)}
+ const inC=new Set((s?cart:pcart).map(l=>l.id));return db.items.filter(i=>!i.hide&&!inC.has(i.id)&&!(s&&sOut(i))&&(c[i.id]>0||n[i.id]>0)).sort((a,b)=>(c[b.id]||0)-(c[a.id]||0)||(n[b.id]||0)-(n[a.id]||0)||a.name.localeCompare(b.name)).slice(0,4)}
 const edTile=(i,P)=>`<button class="qt" onclick="${P.add}(${i.id})"><b>${esc(i.name)}</b><div class="qs"><span class="p">${P.price(i)}</span><span class="${i.stock<=0?'due':''}">${stkLong(i)}</span></div></button>`;
-function edList(t,v){const P=EDP[t],q=v.toLowerCase(),fr=edFreq(t),all=db.items.filter(i=>!i.hide),rows=L=>`<div class="dd">${ddRows(L,P.add,P.price,v)}</div>`;
- if(q)return['',rows(all.filter(i=>i.name.toLowerCase().includes(q)||i.code==v).slice(0,60))];
+function edList(t,v){const P=EDP[t],q=v.toLowerCase(),fr=edFreq(t),all=db.items.filter(i=>!i.hide),ord=L=>t=='s'?[...L.filter(i=>!sOut(i)),...L.filter(sOut)]:L,rows=L=>`<div class="dd">${ddRows(L,P.add,P.price,v)}</div>`;
+ if(q)return['',rows(ord(all.filter(i=>i.name.toLowerCase().includes(q)||i.code==v)).slice(0,60))];
  if(fr.length&&!edBr)return['<div class="sec">Quick access</div>',`<div class="qg">${fr.map(i=>edTile(i,P)).join('')}</div><button class="btn o bw" onclick="edBrowse(1)">Browse all items</button>`];
- return[`<div class="line sp"><div class="sec">All items · ${all.length}</div>${fr.length?'<button class="lnk" onclick="edBrowse(0)">Quick access</button>':''}</div>`,rows(srt(all,'name').slice(0,300))]}
+ return[`<div class="line sp"><div class="sec">All items · ${all.length}</div>${fr.length?'<button class="lnk" onclick="edBrowse(0)">Quick access</button>':''}</div>`,rows(ord(srt(all,'name')).slice(0,300))]}
 function edFind(top){const i=$('#edq'),h=$('#edt'),r=$('#edl');if(r){const[a,b]=edList(edT,(i?i.value:'').trim());h.innerHTML=a;r.innerHTML=b;if(top){const c=$('#edc');if(c)c.scrollTop=0}}}
 const edBrowse=v=>{edBr=v;edFind(1)};
 function edEnter(){const v=(($('#edq')||{}).value||'').trim();if(!v)return;const q=v.toLowerCase(),H=db.items.filter(i=>!i.hide&&(i.code==v||i.name.toLowerCase().includes(q))),c=H.find(i=>i.code==v)||(H.length==1?H[0]:null),P=EDP[edT];if(c)window[P.add](c.id);else if(!H.length)window[P.code](v)}
@@ -1513,11 +1537,11 @@ function retQ(i,left,refId,kind,un){const e=$('#rq'+i);if(!e)return;if(e.value!=
 function rcChk(refId,kind){const X=rfCtx,e=$('#rcv');if(!X||!e||e.value==='')return;const v=+e.value;if(!(v>=0)){e.value='';warn('Refund must be 0 or more')}else{const I=!X.walk?rcInfo(refId,kind,X.eid,X.t):null;if(I&&v>I.max+0.005){e.value=I.max;warn('At most ₹'+money(I.max)+' can be refunded')}}retUpd(refId,kind)}
 function retUpd(refId,kind){const src=kind=='c'?db.bills.find(x=>x.id==refId):db.purch.find(x=>x.id==refId);if(!src)return;let t=0;src.lines.forEach((l,i)=>{const e=$('#rq'+i),q=e?+e.value:0;if(!(q>0))return;const p=kind=='c'?lnet(l)/l.q:l.r,a=Math.round(q*p*100)/100;t+=kind=='c'?a:a+a*l.g/100});t=kind=='c'?Math.round(t):Math.round(t*100)/100;const r=$('#rtot');if(r)r.textContent='₹'+money(t);rfUi(refId,kind,t)}
 
-function custBox(pt){return `<div class="dtr">${dchip('dsl',bdate||today(),'bdate=this.value')}</div><div class="c"><div class="f"><label>Customer</label><div class="pick box tap" onclick="pickP('c',id=>{bparty=id})">${pt?`${av(pt.name)}<div class="gr"><b>${esc(pt.name)}</b><span class="m">${pt.bal>0.005?'Owes ₹'+money(pt.bal)+(odOf(pt,editId)>0.5?' · <b class="due">₹'+money(odOf(pt,editId))+' overdue</b>':''):pt.bal<-0.005?'Advance ₹'+money(-pt.bal):esc(pt.phone||'')}</span></div><button class="ib s" onclick="event.stopPropagation();bparty='';render()" aria-label="Remove customer">${ic('x')}</button>`:`<div class="gr"><b>Walk-in customer</b><span class="m">Tap to choose a saved customer</span></div>${ic('chev')}`}</div></div><div class="f" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:10px"><label style="margin:0">Price level</label><div class="seg" style="flex:none;width:200px">${[[0,'Retail'],[1,'Wholesale']].map(([v,l])=>`<button type="button" class="${!!v==bwh?'on':''}" onclick="setWh(${v})">${l}</button>`).join('')}</div></div></div>`}
+function custBox(pt){return `<div class="dtr" style="justify-content:space-between;align-items:center">${heldChip()}<span style="margin-left:auto">${dchip('dsl',bdate||today(),'bdate=this.value')}</span></div><div class="c"><div class="f"><label>Customer</label><div class="pick box tap" onclick="pickP('c',id=>{bparty=id})">${pt?`${av(pt.name)}<div class="gr"><b>${esc(pt.name)}</b><span class="m">${pt.bal>0.005?'Owes ₹'+money(pt.bal)+(odOf(pt,editId)>0.5?' · <b class="due">₹'+money(odOf(pt,editId))+' overdue</b>':''):pt.bal<-0.005?'Advance ₹'+money(-pt.bal):esc(pt.phone||'')}</span></div><button class="ib s" onclick="event.stopPropagation();bparty='';render()" aria-label="Remove customer">${ic('x')}</button>`:`<div class="gr"><b>Walk-in customer</b><span class="m">Tap to choose a saved customer</span></div>${ic('chev')}`}</div></div><div class="f" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:10px"><label style="margin:0">Price level</label><div class="seg" style="flex:none;width:200px">${[[0,'Retail'],[1,'Wholesale']].map(([v,l])=>`<button type="button" class="${!!v==bwh?'on':''}" onclick="setWh(${v})">${l}</button>`).join('')}</div></div></div>`}
 function setWh(v){bwh=!!v;cart.forEach(l=>{delete l.p;delete l.pp;delete l.o});render()}
 function vSale(){const ls=shown().map(line).filter(Boolean),T=totals(ls),pt=db.parties.find(x=>x.id==bparty),qn=ls.reduce((s,l)=>s+l.q,0);
  return custBox(pt)+`
- <div class="sec" id="cth">Cart${ls.length?' · '+ls.length+(ls.length==1?' item':' items')+' · qty '+esc(qtySum(ls)):''}</div>${ls.map(cartSum).join('')||'<div class="empty"><b>Cart is empty</b><span class="m">Tap “Add item” to add the first one.</span></div>'}<div style="display:flex;justify-content:flex-end;gap:8px;margin:6px 0"><button class="btn sm o" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="billScan()">${ic('scan')} Scan</button><button class="btn sm" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="edAdd('s')">${ic('plus')} Add item</button></div>
+ <div class="sec" id="cth" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Cart${ls.length?' · '+ls.length+(ls.length==1?' item':' items')+' · qty '+esc(qtySum(ls)):''}</span>${canHold()?`<button type="button" class="btn sm o" style="flex:none;min-height:28px;padding:2px 10px;font-size:12px;text-transform:none;letter-spacing:0" onclick="holdCart()">Hold ${isEst?'estimate':'bill'}</button>`:''}</div>${ls.map(cartSum).join('')||'<div class="empty"><b>Cart is empty</b><span class="m">Tap “Add item” to add the first one.</span></div>'}<div style="display:flex;justify-content:flex-end;gap:8px;margin:6px 0"><button class="btn sm o" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="billScan()">${ic('scan')} Scan</button><button class="btn sm" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="edAdd('s')">${ic('plus')} Add item</button></div>
  ${ls.length?saleRest(ls,T,pt):''}<div id="dsum">${dsumH(ls,T)}</div><div id="gstb">${gstBox(ls,T,pt)}</div>${ls.length?salePay(ls,T,pt):''}
  <div class="bar"><div class="gr"><span class="m" id="ctl">Total${ls.length&&!comp()?' · GST ₹'+money(T.tax):''}</span><div class="tt" id="ctot">₹${money(T.t)}</div></div><button class="btn" ${ls.length?'':'disabled'} onclick="finish(false)">${isEst?'Save estimate':editId?'Update bill':'Save bill'}</button></div>`}
 /* credit rules: (1) a customer who still owes must have repaid at least the set % of their open bills before getting more credit; (2) dues older than the credit period must be paid */
@@ -1630,7 +1654,7 @@ function psave(){const P=pcalc(),pe=pEditId&&db.purch.find(x=>x.id==pEditId);if(
   lines:P.ls.map(l=>{const f=l.f||1,it=db.items.find(x=>x.id==l.id)||{},ru=l.ru||1,rr=+(l.r/(1+((comp()||pgst=='n')?0:l.g)/100)).toFixed(6),fc=l.fa>0?+(l.fa/(l.q*f)).toFixed(6):0;return{...(fc>0?{fc}:{}),id:l.id,n:l.n,h:l.h||'',un:l.un||'PCS',q:l.q*f,rr,ru,r:rr/ru,g:(comp()||pgst=='n')?0:l.g,bt:l.bt||'',ex:l.ex||'',pq:+it.pq>1?+it.pq:undefined,pu:+it.pq>1?(it.pu||'Pack'):undefined}})};
  const oi=pe?pe.lines.map(l=>l.id):[];if(pe){remAdv('spays',pe,'Advance with invoice ');Object.assign(pe,b)}else db.purch.unshift(b);pEditId='';let rp=0;{const C=costing();new Set([...P.ls.map(l=>l.id),...oi]).forEach(id=>{const i=db.items.find(x=>x.id==id);if(!i)return;const w=wacOf(C,id);if(w>0)rp+=applyCost(i,w,wfOf(C,id),wgOf(C,id));const l=P.ls.find(z=>z.id==id);if(l&&+l.mrp>0&&!db.purch.some(x=>x.id!=(pe||b).id&&!x.void&&x.t>(pe||b).t&&x.lines.some(z=>z.id==id)))i.mrp=+(+l.mrp).toFixed(2)})}
  if(extra>0)db.spays.unshift({id:uid(),no:nextPNo(),sid:P.sp.id,amt:extra,mode:pmode=='Split'?'Cash':pmode,t:b.t,adv:1,bill:b.id,note:'Advance with invoice '+b.no});
- pcart=[];pno='';psup='';ppay='full';precv='';pmode='Cash';psp=blankSp();pgst='y';pfr='';pfs='b';pfm='Cash';pfsp=blankSp();pfw='v';recalc();save();pdate='';flowLand();toast((pe?'Purchase updated':'Purchase saved')+(extra>0?' · advance ₹'+money(extra)+' kept':'')+(rp?' · selling price updated for '+rp+' item'+(rp==1?'':'s'):''));pView((pe||b).id,0,1)}
+ pcart=[];pno='';psup='';ppay='full';precv='';pmode='Cash';psp=blankSp();pgst='y';pfr='';pfs='b';pfm='Cash';pfsp=blankSp();pfw='v';recalc();save();pdate='';const SP=salePend!=null;if(SP)saleResume(1);else flowLand();toast((pe?'Purchase updated':'Purchase saved')+(extra>0?' · advance ₹'+money(extra)+' kept':'')+(rp?' · selling price updated for '+rp+' item'+(rp==1?'':'s'):''));if(!SP)pView((pe||b).id,0,1)}
 /* ---- items: pieces, boxes and clearer stock ---- */
 function itCalc(s){const g=k=>(($('#'+k)||{}).value||''),v=k=>+g(k)||0,mf={m:'f17',bm:'f18',wm:'w1',wbm:'w3'},mk=mf[s];if(mk){const e=$('#'+mk);if(e)delete e.dataset.x}
  /* a margin worked out from a typed price keeps its exact value, so rounding up does not overshoot */
