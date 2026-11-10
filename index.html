@@ -266,9 +266,16 @@ function payMsg(y,sms,inc){const s=db.shop,L=ledger(y.pid).find(x=>x.k=='p'&&x.r
 function spayMsg(y,sms){const s=db.shop,sp=db.sups.find(x=>x.id==y.sid),cb=sp?sp.bal:0;
  if(!sms)return s.name+'\nPaid ₹'+money(y.amt)+' ('+(y.mode||'Cash')+')'+(y.ref?' · Ref '+y.ref:'')+(cb>0.005?' · Balance ₹'+money(cb):'');
  return s.name+': Paid ₹'+money(y.amt)+' by '+(y.mode||'Cash')+' on '+dIN(y.t)+(y.ref?', ref '+y.ref:'')+'. '+(cb>0.005?'Balance payable ₹'+money(cb):'Account settled')+'. Thank you'}
-function sendTo(pid,text,via,kind){const p=kind=='s'?db.sups.find(x=>x.id==pid):kind=='c'?db.parties.find(x=>x.id==pid):(db.parties.find(x=>x.id==pid)||db.sups.find(x=>x.id==pid)),ph=((p&&p.phone)||'').replace(/\D/g,''),cc=(db.shop.cc||'91').replace(/\D/g,''),num=ph?(ph.length==10?cc+ph:ph.replace(/^0+/,'')):'';
- if(!num)toast('No phone saved. Choose a contact in the app');
- if(via=='sms')location.href='sms:'+(num?'+'+num:'')+'?body='+encodeURIComponent(smsSafe(text));else window.open('https://wa.me/'+num+'?text='+encodeURIComponent(text),'_blank')}
+const partyOf=(pid,kind)=>kind=='s'?db.sups.find(x=>x.id==pid):kind=='c'?db.parties.find(x=>x.id==pid):(db.parties.find(x=>x.id==pid)||db.sups.find(x=>x.id==pid)),
+ phoneOf=(pid,kind)=>((partyOf(pid,kind)||{}).phone||'').replace(/\D/g,'');
+/* ONE prompt for a missing phone number (SMS, WhatsApp text, WhatsApp share). acts=[[label,run(number),needsNumber]]; the number can be saved to the profile */
+function numAsk(p,acts){const d=$('#sheet');if(d.open)d.close();
+ $('#shb').innerHTML=`<div class="sht">${p?esc(p.name)+' has no phone number saved':'Enter the phone number'}</div><input id="nph" type="tel" inputmode="numeric" maxlength="15" placeholder="Mobile number" autocomplete="off">${p?'<label class="shi pc"><input type="checkbox" id="nsv" checked><span>Save this number to the profile</span></label>':''}${acts.map((a,i)=>`<button type="button" class="shi" data-i="${i}"><span>${a[0]}</span></button>`).join('')}<button type="button" class="shi x" onclick="$('#sheet').close()">Cancel</button>`;
+ d.showModal();$('#shb').querySelectorAll('button[data-i]').forEach(b=>b.onclick=()=>{const a=acts[b.dataset.i],n=$('#nph').value.replace(/\D/g,''),ok=n.length>=10;if(a[2]&&!ok)return toast('Enter a valid mobile number');if(ok&&p&&$('#nsv')&&$('#nsv').checked){p.phone=n;p.u=Date.now();save()}d.close();a[1](ok?n:'')});setTimeout(()=>$('#nph').focus(),80)}
+function sendTo(pid,text,via,kind,num){const p=partyOf(pid,kind),cc=(db.shop.cc||'91').replace(/\D/g,''),fix=d=>d?(d.length==10?cc+d:d.replace(/^0+/,'')):'',
+ go=n=>{if(via=='sms')location.href='sms:'+(n?'+'+n:'')+'?body='+encodeURIComponent(smsSafe(text));else window.open('https://wa.me/'+n+'?text='+encodeURIComponent(text),'_blank')},ph=num||phoneOf(pid,kind);
+ if(ph)return go(fix(ph));
+ numAsk(p,[['Send '+(via=='sms'?'message':'on WhatsApp'),n=>go(fix(n)),1],['Choose a contact in the app instead',()=>go('')]])}
 function billDoc(b,includeCurrent){const bp=b.void?null:billPay(b),st=BillLayout.settle(b),fm=(l,v)=>/^Discount/.test(l)?'−₹'+money(-v):l=='Round off'?(v>0?'+':'-')+money(Math.abs(v)):'₹'+money(v),
  sums=sumGroups(BillLayout.totals(b).map(([l,v,bd])=>bd?[l,fm(l,v),1]:[l,fm(l,v)]),retRows(b,0,v=>v<0?'−₹'+money(-v):'₹'+money(v)),[...st.rows.map(([l,v])=>[l,'₹'+money(v)]),...(b.pid?[['Due','₹'+money(st.due)]]:[])],BillBalanceDisplay.rows(b));
  return{barcode:transactionBarcode('bill',b.id),title:(b.void?'CANCELLED ':'')+(compSch()?'BILL OF SUPPLY':shopSt()?'TAX INVOICE':'BILL'),meta:[['Invoice no',b.no],['Date',new Date(b.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',b.cust||'Walk-in'],...(b.cg?[['GSTIN',b.cg]]:[]),...(b.pos?[['Place of supply',b.pos+' '+(STATES[b.pos]||'')]]:[])],
@@ -313,7 +320,56 @@ function docPages(o,pay){
    y+=34;g.textAlign='center';g.font=F(16);g.fillStyle='#8a97a8';g.fillText('Thank you for your business!',Wd/2,y);if(o.barcode){y+=12;TxEAN13.draw(g,o.barcode,Wd/2,y,680,42)}}
   return c})}
 function docMsg(o){const k=(o.sums||[]).find(r=>r[2])||(o.sums||[]).slice(-1)[0],t=String(o.title||'').toLowerCase().replace(/^./,c=>c.toUpperCase());return [db.shop.name||'',t+(k?' · '+k[0]+' '+k[1]:'')].filter(Boolean).join('\n')}
-/* minimal PDF writer: every rendered page (JPEG) becomes one PDF page, so a multi-page statement goes out as ONE file */
+/* ---- statement PDF: the A5 print layout drawn as a real PDF (selectable text, small file). The standard PDF fonts have no ₹ or non-Latin letters:
+   ₹ is written "Rs", and when a name still needs other characters pdfDoc returns null so the caller falls back to the image PDF. ---- */
+const PDFW={n:[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584],
+ b:[278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584]};
+function pdfDoc(o,pay){
+ const W=419.53,H=595.28,M=26,CW=W-2*M;let bad=0;
+ const T=t=>{t=String(t==null?'':t).replace(/₹/g,'Rs ').replace(/[−–—]/g,'-').replace(/[·•]/g,'-').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/…/g,'...').replace(/\s+/g,' ').trim();if(/[^\x20-\x7e]/.test(t)){bad=1;t=t.replace(/[^\x20-\x7e]/g,'?')}return t},
+  wd=(t,b,z)=>{let a=0;for(const c of t)a+=PDFW[b?'b':'n'][c.charCodeAt(0)-32]||556;return a*z/1000},
+  fit=(t,b,z,w)=>{while(t.length>1&&wd(t,b,z)>w)t=t.slice(0,-1);return t},
+  wrap=(t,b,z,w,mx)=>{const L=[];let c='';t.split(' ').forEach(x=>{while(wd(x,b,z)>w&&x.length>1){let k=x.length;while(k>1&&wd(x.slice(0,k),b,z)>w)k--;if(c){L.push(c);c=''}L.push(x.slice(0,k));x=x.slice(k)}const y=c?c+' '+x:x;if(!c||wd(y,b,z)<=w)c=y;else{L.push(c);c=x}});L.push(c);return L.slice(0,mx||9)},
+  rgb=h=>{const n=parseInt(h.slice(1),16);return[(n>>16)/255,((n>>8)&255)/255,(n&255)/255].map(v=>v.toFixed(3)).join(' ')},
+  E=t=>t.replace(/[\\()]/g,'\\$&'),pgs=[];let ops,Y;
+ const np=()=>{ops=[];pgs.push(ops);Y=M},
+  tx=(x,y,t,b,z,col,al)=>{t=T(t);const w=wd(t,b,z);if(al=='r')x-=w;else if(al=='c')x-=w/2;ops.push(`BT /F${b?2:1} ${z} Tf ${rgb(col||'#111111')} rg ${x.toFixed(2)} ${(H-y).toFixed(2)} Td (${E(t)}) Tj ET`)},
+  rc=(x,y,w,h,col)=>ops.push(`${rgb(col)} rg ${x.toFixed(2)} ${(H-y-h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f`),
+  ln=(x1,y,x2,col,lw,dash)=>ops.push(`${lw||.6} w ${dash?'[3 2] 0':'[] 0'} d ${rgb(col||'#111111')} RG ${x1.toFixed(2)} ${(H-y).toFixed(2)} m ${x2.toFixed(2)} ${(H-y).toFixed(2)} l S`),
+  bx=(x,y,w,h,col,dash)=>ops.push(`1 w ${dash?'[4 3] 0':'[] 0'} d ${rgb(col)} RG ${x.toFixed(2)} ${(H-y-h).toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re S`);
+ np();const s=db.shop;
+ /* header: shop on the left, document title on the right */
+ tx(M,Y+14,s.name||'',1,15);let hy=Y+26;[s.addr,s.phone&&'Phone '+s.phone,s.gstin&&'GSTIN '+s.gstin].filter(Boolean).forEach(t=>{tx(M,hy,t,0,8,'#444444');hy+=10});
+ tx(W-M,Y+14,o.title,1,11,'#111111','r');Y=Math.max(hy,Y+20)+2;ln(M,Y,W-M,'#111111',1.4);Y+=12;
+ /* meta, two per row */
+ const mw=CW/2;o.meta.forEach(([a,b],i)=>{const x=M+(i%2)*mw;if(i%2==0&&i)Y+=13;const l=T(a+':');tx(x,Y,l,0,8.5,'#555555');tx(x+wd(l,0,8.5)+4,Y,fit(T(b),1,9,mw-wd(l,0,8.5)-12),1,9)});Y+=o.meta.length?18:0;
+ /* table, header repeated on every page */
+ const cl=o.cols||[],cw=cl.map(c=>c.w*CW),cx=j=>M+cw.slice(0,j).reduce((a,b)=>a+b,0),cxr=i=>cl[i].al=='r'?cx(i)+cw[i]-4:cx(i)+4,
+  hdr=()=>{rc(M,Y,CW,16,'#eeeeee');cl.forEach((c,i)=>tx(cxr(i),Y+11,c.h,1,8.5,'#111111',c.al=='r'?'r':''));Y+=16};
+ if(cl.length){hdr();o.rows.forEach(r=>{const L=r.map((t,i)=>cl[i].al=='r'?[T(t)]:wrap(T(t),0,8.5,cw[i]-8,3)),h=Math.max(...L.map(l=>l.length))*10+6;if(Y+h>H-M-24){np();hdr()}
+  L.forEach((ls,i)=>ls.forEach((t,k)=>tx(cxr(i),Y+10+k*10,t,0,8.5,'#111111',cl[i].al=='r'?'r':'')));Y+=h;ln(M,Y,W-M,'#cccccc',.5)})}
+ /* totals, right block */
+ Y+=8;const sx=M+CW*.42;o.sums.forEach(([a,b,bd,g])=>{const h=bd?20:14;if(Y+h+(g?8:0)>H-M-24)np();if(g){ln(sx,Y+2,W-M,'#999999',.5,1);Y+=8}
+  const due=!bd&&/due|payable/i.test(a)&&parseFloat(String(b).replace(/[^\d.]/g,''))>.005;
+  if(bd){ln(sx,Y,W-M,'#111111',1);ln(sx,Y+h,W-M,'#111111',1);tx(sx+2,Y+14,a,1,10.5);tx(W-M-2,Y+14,b,1,10.5,'#111111','r')}else{tx(sx+2,Y+10,a,due,9,due?'#d93636':'#444444');tx(W-M-2,Y+10,b,1,9,due?'#d93636':'#111111','r')}Y+=h});
+ /* payment sections (same wording as every other renderer), QR drawn as vector squares */
+ payBoxes(pay).forEach(p=>{const h=payHead(p),G=p.qr,n=G?G.length+8:0,qz=G?74:0,
+  L=[[h.t,1,8.5,'#1f5be0',13],...(h.noAmt?[]:[['₹'+money(p.amt),1,17,p.due?'#d93636':'#111111',22]]),...h.n.map(x=>[x,0,8,'#555555',11])];
+  if(p.u)L.push(['UPI ID: '+p.id,1,9,'#111111',14]);
+  if(p.b){const bn=[p.bank.n,p.bank.h].filter(Boolean).join(' - ');if(bn)L.push([bn,0,8.5,'#111111',12]);L.push(['A/c '+p.bank.a+'  IFSC '+p.bank.i,1,8.5,'#111111',13])}
+  const bh=Math.max(qz?qz+16:0,L.reduce((a,l)=>a+l[4],0)+14);Y+=p.bal?18:12;if(Y+bh>H-M-24)np();bx(M,Y,CW,bh,p.bal?'#999999':'#1f5be0',!p.bal);let cy=Y+8;L.forEach(([t,b,z,col,adv])=>{cy+=adv;tx(M+12,cy-3,t,b,z,col)});
+  if(G){const u=qz/n,X=M+CW-qz-8,YY=Y+(bh-qz)/2;ops.push('0 0 0 rg');G.forEach((row,j)=>{let i=0;while(i<row.length){if(row[i]){let k=i;while(k<row.length&&row[k])k++;ops.push(`${(X+(i+4)*u).toFixed(2)} ${(H-(YY+(j+4)*u)-u).toFixed(2)} ${((k-i)*u+.15).toFixed(2)} ${(u+.15).toFixed(2)} re f`);i=k}else i++}})}
+  Y+=bh});
+ Y+=16;if(Y>H-M-24)np();tx(W/2,Y,'Thank you for your business!',0,9,'#777777','c');
+ pgs.forEach((p,i)=>{ops=p;tx(W/2,H-14,'Page '+(i+1)+' of '+pgs.length,0,7.5,'#888888','c')});
+ if(bad)return null;
+ const parts=[],off=[],enc=new TextEncoder();let len=0;const add=t=>{const b=enc.encode(t);parts.push(b);len+=b.length},ob=(n,t)=>{off[n]=len;add(n+' 0 obj\n'+t+'\nendobj\n')};
+ add('%PDF-1.4\n');ob(1,'<</Type/Catalog/Pages 2 0 R>>');ob(2,'<</Type/Pages/Count '+pgs.length+'/Kids['+pgs.map((_,i)=>(5+i*2)+' 0 R').join(' ')+']>>');
+ ob(3,'<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>');ob(4,'<</Type/Font/Subtype/Type1/BaseFont/Helvetica-Bold/Encoding/WinAnsiEncoding>>');
+ pgs.forEach((p,i)=>{const n=5+i*2,c=p.join('\n');ob(n,'<</Type/Page/Parent 2 0 R/MediaBox[0 0 '+W+' '+H+']/Resources<</Font<</F1 3 0 R/F2 4 0 R>>>>/Contents '+(n+1)+' 0 R>>');ob(n+1,'<</Length '+enc.encode(c).length+'>>\nstream\n'+c+'\nendstream')});
+ const N=5+pgs.length*2,x=len;add('xref\n0 '+N+'\n0000000000 65535 f \n');for(let n=1;n<N;n++)add(String(off[n]).padStart(10,'0')+' 00000 n \n');
+ add('trailer\n<</Size '+N+'/Root 1 0 R>>\nstartxref\n'+x+'\n%%EOF');return new Blob(parts,{type:'application/pdf'})}
+/* minimal PDF writer (fallback): every rendered page (JPEG) becomes one PDF page, so a multi-page statement goes out as ONE file */
 async function pdfOf(cs){const enc=new TextEncoder(),parts=[],off=[],imgs=[];let len=0;
  const add=x=>{const b=typeof x=='string'?enc.encode(x):x;parts.push(b);len+=b.length},obj=(n,t)=>{off[n]=len;add(n+' 0 obj\n'+t+'\nendobj\n')};
  for(const c of cs){const bl=await new Promise(r=>c.toBlob(r,'image/jpeg',.85));imgs.push(new Uint8Array(await bl.arrayBuffer()))}
@@ -327,11 +383,12 @@ async function pdfOf(cs){const enc=new TextEncoder(),parts=[],off=[],imgs=[];let
 const shItems=()=>[['down',_sd&&_sd.pdf?'Save PDF to downloads':'Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','WhatsApp',"shareDoc(_sd.o,_sd.name,1,pinc())"],['sms','Short message by SMS',"sendTo(_sd.pid,_sd.bill?billMsg(_sd.bill,1,pinc()):_sd.mf?_sd.mf(pinc()===true):_sd.sms||_sd.msg,'sms',_sd.kind)"]];
 async function shareDoc(o,name,mode,on,ctx){const c=ctx||(_sd&&_sd.o===o?_sd:{}),bill=c.bill||null,includeCurrent=on===true,doc=bill?billDoc(bill,includeCurrent):o;
  if(!mode){_sd={o:doc,name,msg:c.msg||docMsg(doc),sms:c.sms,mf:c.mf,pid:c.pid,kind:c.kind,pr:c.pr,pdf:c.pdf,bill};sheetPay('Share',shItems(),doc);return}
- const cs=docPages(doc,payList(doc,on)),fs=[],tx=bill?billMsg(bill,0,includeCurrent):c.mf?c.mf(includeCurrent):c.msg||docMsg(doc);
- if(c.pdf)fs.push(new File([await pdfOf(cs)],name+'.pdf',{type:'application/pdf'}));else for(let p=0;p<cs.length;p++){const bl=await new Promise(r=>cs[p].toBlob(r,'image/jpeg',.85));fs.push(new File([bl],name+(cs.length>1?'-'+(p+1):'')+'.jpg',{type:'image/jpeg'}))}
- if(mode!=2){try{if(navigator.canShare&&navigator.canShare({files:fs})){await navigator.share({files:fs,text:tx});return}}catch(e){if(e.name=='AbortError')return}}
+ if(mode==1&&c.pid&&!c.asked&&!phoneOf(c.pid,c.kind))return numAsk(partyOf(c.pid,c.kind),[['Open their WhatsApp chat',n=>shareDoc(o,name,1,on,{...c,asked:1,num:n}),1],['Share the file only (pick the chat yourself)',()=>shareDoc(o,name,1,on,{...c,asked:1})]]);
+ const pay=payList(doc,on),vb=c.pdf?pdfDoc(doc,pay):null,cs=vb?null:docPages(doc,pay),fs=[],tx=bill?billMsg(bill,0,includeCurrent):c.mf?c.mf(includeCurrent):c.msg||docMsg(doc);
+ if(c.pdf)fs.push(new File([vb||await pdfOf(cs)],name+'.pdf',{type:'application/pdf'}));else for(let p=0;p<cs.length;p++){const bl=await new Promise(r=>cs[p].toBlob(r,'image/jpeg',.85));fs.push(new File([bl],name+(cs.length>1?'-'+(p+1):'')+'.jpg',{type:'image/jpeg'}))}
+ if(mode!=2&&!c.num){try{if(navigator.canShare&&navigator.canShare({files:fs})){await navigator.share({files:fs,text:tx});return}}catch(e){if(e.name=='AbortError')return}}
  fs.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click()});
- if(mode!=2){toast((c.pdf?'PDF':'Image')+' saved. Attach it in WhatsApp');sendTo(c.pid,tx,'wa',c.kind)}else toast((c.pdf?'PDF':'Image')+' saved to your downloads')}
+ if(mode!=2){toast((c.pdf?'PDF':'Image')+' saved. Attach it in WhatsApp');sendTo(c.pid,tx,'wa',c.kind,c.num)}else toast((c.pdf?'PDF':'Image')+' saved to your downloads')}
 
 const remText=p=>{const t=payShort().replace(/^Pay by /,'');return 'Dear '+p.name+', your current balance as of '+dIN(Date.now())+' is ₹'+money(p.bal)+' at '+db.shop.name+'.'+(t?' To clear it, kindly pay using '+t+'.':' Kindly clear it at your earliest convenience.')+' Thank you'};
 function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=via||db.shop.via||'wa';p.rem=Date.now();p.u=Date.now();save();sendTo(id,remText(p,via=='sms'),via,'c');render()}
