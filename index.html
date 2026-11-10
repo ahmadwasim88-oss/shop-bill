@@ -233,10 +233,9 @@ let partyF='all';
 const dt=t=>new Date(t).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
 function ledger(id){const e=[...db.bills.filter(b=>b.pid==id&&!b.void).map(b=>({t:b.t,k:'b',r:b,a:b.total,d:dueOf(b)})),...db.pays.filter(y=>y.pid==id&&!y.void).map(y=>({t:y.t,k:'p',r:y,a:-y.amt,d:-y.amt})),...db.notes.filter(n=>n.kind=='c'&&n.pid==id&&!n.void).map(n=>({t:n.t,k:'n',r:n,a:-n.total,d:-r2c(n.total-cashOf(n))}))].sort((x,y)=>x.t-y.t);let r=0;e.forEach(x=>{x.pre=Math.round(r*100)/100;r=Math.round((r+x.d)*100)/100;x.bal=r});return e}
 const BillBalanceDisplay=(()=>{const nz=v=>Math.abs(+v||0)>0.005,r2=v=>Math.round((+v||0)*100)/100,tb=v=>v<-0.005?'₹'+money(-v)+' advance':'₹'+money(Math.max(0,v)),tt=v=>v<-0.005?money(-v)+' adv':money(Math.max(0,v));
- /* latest bill of a customer: Previous + New balance (when either is non-zero). Older bill: nothing, unless "Include current balance" is chosen on print/share */
- const get=b=>{const none={mode:'none',balance:0,previous:0,due:0,latest:false};if(!b||b.void||!b.pid)return none;const es=ledger(b.pid),e=es.find(x=>x.k=='b'&&x.r.id==b.id),p=db.parties.find(x=>x.id==b.pid),raw=p&&Number.isFinite(+p.bal)?+p.bal:e?e.bal:0,latest=!!e&&es[es.length-1]===e,due=r2(dueOf(b));
-  if(latest)return nz(e.pre)||nz(e.bal)?{mode:'breakdown',balance:r2(e.bal),previous:r2(e.pre),due,latest}:{...none,due,latest};
-  return nz(raw)?{mode:'current',balance:r2(raw),previous:e?r2(e.pre):0,due,latest}:{...none,due,latest}};
+ /* every bill of a named customer: Previous + New balance as they stood at that bill (when either is non-zero). Walk-in: nothing. */
+ const get=b=>{const none={mode:'none',balance:0,previous:0,due:0};if(!b||b.void||!b.pid)return none;const e=ledger(b.pid).find(x=>x.k=='b'&&x.r.id==b.id),due=r2(dueOf(b));
+  return e&&(nz(e.pre)||nz(e.bal))?{mode:'breakdown',balance:r2(e.bal),previous:r2(e.pre),due}:{...none,due}};
  return Object.freeze({get,
   rows(b){const x=get(b);return x.mode=='breakdown'?[['Previous balance',tb(x.previous)],['New balance',tb(x.balance),'b']]:[]},
   thermalRows(b){const x=get(b);return x.mode=='breakdown'?[['Prev balance',tt(x.previous)],['New balance',tt(x.balance)]]:[]},
@@ -259,13 +258,8 @@ function nextRNo(){const P='R'+DEV;let m=0;db.pays.forEach(y=>{const x=String(y.
 const rupS=v=>v<0?'−'+rup(-v):rup(v);
 const retOf=(src,sup)=>db.notes.filter(n=>!n.void&&n.ref==src.id&&n.kind==(sup?'d':'c')).sort((a,b)=>a.t-b.t),
  retRows=(src,sup,fm)=>{const L=retOf(src,sup);if(!L.length)return[];const sum=L.reduce((t,n)=>t+n.total,0);return[...L.map(n=>[(sup?'Debit note ':'Credit note ')+n.no+' ('+new Date(n.t).toLocaleDateString('en-IN',{day:'numeric',month:'short'})+')',fm(-n.total)]),['Net after returns',fm(src.total-sum),'b']]};
-function billMsg(b,sms,inc){const s=db.shop,bp=b.void?null:billPay(b),rt=retOf(b,0).reduce((t,n)=>t+n.total,0),rs=rt>0.005?'Returned ₹'+money(rt)+' (net ₹'+money(b.total-rt)+')':'',st=BillLayout.settle(b);
- return [s.name,'Bill '+b.no+' dated '+dIN(b.t),'Total ₹'+money(b.total)+(rs?' · '+rs:''),st.rows.map(([l,v])=>l+' ₹'+money(v)).join(', '),b.pid&&st.due>0.005?'Due ₹'+money(st.due):'',BillBalanceDisplay.message(b),...msgTail(!!bp,custBal(b.pid),inc===true),'Thank you'].filter(Boolean).join('\n')}
-function payMsg(y,sms,inc){const s=db.shop,L=ledger(y.pid).find(x=>x.k=='p'&&x.r.id==y.id),bl=L?(L.bal>0.005?'Balance ₹'+money(L.bal):L.bal<-0.005?'Advance ₹'+money(-L.bal):'Account settled'):'';
- return [s.name,'Receipt'+(y.no?' '+y.no:'')+' dated '+dIN(y.t),'Received ₹'+money(y.amt)+' ('+(y.mode||'Cash')+')',bl,...msgTail(!!recPay(y),custBal(y.pid),inc===true),'Thank you'].filter(Boolean).join('\n')}
-function spayMsg(y,sms){const s=db.shop,sp=db.sups.find(x=>x.id==y.sid),cb=sp?sp.bal:0;
- if(!sms)return s.name+'\nPaid ₹'+money(y.amt)+' ('+(y.mode||'Cash')+')'+(y.ref?' · Ref '+y.ref:'')+(cb>0.005?' · Balance ₹'+money(cb):'');
- return s.name+': Paid ₹'+money(y.amt)+' by '+(y.mode||'Cash')+' on '+dIN(y.t)+(y.ref?', ref '+y.ref:'')+'. '+(cb>0.005?'Balance payable ₹'+money(cb):'Account settled')+'. Thank you'}
+
+
 const partyOf=(pid,kind)=>kind=='s'?db.sups.find(x=>x.id==pid):kind=='c'?db.parties.find(x=>x.id==pid):(db.parties.find(x=>x.id==pid)||db.sups.find(x=>x.id==pid)),
  phoneOf=(pid,kind)=>((partyOf(pid,kind)||{}).phone||'').replace(/\D/g,'');
 /* ONE prompt for a missing phone number (SMS, WhatsApp text, WhatsApp share). acts=[[label,run(number),needsNumber]]; the number can be saved to the profile */
@@ -319,7 +313,6 @@ function docPages(o,pay){
     if(ql){const qy=y+(payH-qs-30)/2;QR.draw(g,pay.qr,M+CW-qs-24,qy,qs,k);g.font=F(13);g.fillStyle=C.mut;g.textAlign='center';g.fillText('Scan with any UPI app',M+CW-qs/2-24,qy+qs+22)}y+=payH});
    y+=34;g.textAlign='center';g.font=F(16);g.fillStyle='#8a97a8';g.fillText('Thank you for your business!',Wd/2,y);if(o.barcode){y+=12;TxEAN13.draw(g,o.barcode,Wd/2,y,680,42)}}
   return c})}
-function docMsg(o){const k=(o.sums||[]).find(r=>r[2])||(o.sums||[]).slice(-1)[0],t=String(o.title||'').toLowerCase().replace(/^./,c=>c.toUpperCase());return [db.shop.name||'',t+(k?' · '+k[0]+' '+k[1]:'')].filter(Boolean).join('\n')}
 /* ---- statement PDF: the A5 print layout drawn as a real PDF (selectable text, small file). The standard PDF fonts have no ₹ or non-Latin letters:
    ₹ is written "Rs", and when a name still needs other characters pdfDoc returns null so the caller falls back to the image PDF. ---- */
 const PDFW={n:[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584],
@@ -342,14 +335,14 @@ function pdfDoc(o,pay){
  tx(M,Y+14,s.name||'',1,15);let hy=Y+26;[s.addr,s.phone&&'Phone '+s.phone,s.gstin&&'GSTIN '+s.gstin].filter(Boolean).forEach(t=>{tx(M,hy,t,0,8,'#444444');hy+=10});
  tx(W-M,Y+14,o.title,1,11,'#111111','r');Y=Math.max(hy,Y+20)+2;ln(M,Y,W-M,'#111111',1.4);Y+=12;
  /* meta, two per row */
- const mw=CW/2;o.meta.forEach(([a,b],i)=>{const x=M+(i%2)*mw;if(i%2==0&&i)Y+=13;const l=T(a+':');tx(x,Y,l,0,8.5,'#555555');tx(x+wd(l,0,8.5)+4,Y,fit(T(b),1,9,mw-wd(l,0,8.5)-12),1,9)});Y+=o.meta.length?18:0;
+ const mw=CW/2;(o.meta||[]).forEach(([a,b],i)=>{const x=M+(i%2)*mw;if(i%2==0&&i)Y+=13;const l=T(a+':');tx(x,Y,l,0,8.5,'#555555');tx(x+wd(l,0,8.5)+4,Y,fit(T(b),1,9,mw-wd(l,0,8.5)-12),1,9)});Y+=(o.meta||[]).length?18:0;
  /* table, header repeated on every page */
  const cl=o.cols||[],cw=cl.map(c=>c.w*CW),cx=j=>M+cw.slice(0,j).reduce((a,b)=>a+b,0),cxr=i=>cl[i].al=='r'?cx(i)+cw[i]-4:cx(i)+4,
   hdr=()=>{rc(M,Y,CW,16,'#eeeeee');cl.forEach((c,i)=>tx(cxr(i),Y+11,c.h,1,8.5,'#111111',c.al=='r'?'r':''));Y+=16};
- if(cl.length){hdr();o.rows.forEach(r=>{const L=r.map((t,i)=>cl[i].al=='r'?[T(t)]:wrap(T(t),0,8.5,cw[i]-8,3)),h=Math.max(...L.map(l=>l.length))*10+6;if(Y+h>H-M-24){np();hdr()}
+ if(cl.length){hdr();(o.rows||[]).forEach(r=>{const L=r.map((t,i)=>cl[i].al=='r'?[T(t)]:wrap(T(t),0,8.5,cw[i]-8,3)),h=Math.max(...L.map(l=>l.length))*10+6;if(Y+h>H-M-24){np();hdr()}
   L.forEach((ls,i)=>ls.forEach((t,k)=>tx(cxr(i),Y+10+k*10,t,0,8.5,'#111111',cl[i].al=='r'?'r':'')));Y+=h;ln(M,Y,W-M,'#cccccc',.5)})}
  /* totals, right block */
- Y+=8;const sx=M+CW*.42;o.sums.forEach(([a,b,bd,g])=>{const h=bd?20:14;if(Y+h+(g?8:0)>H-M-24)np();if(g){ln(sx,Y+2,W-M,'#999999',.5,1);Y+=8}
+ Y+=8;const sx=M+CW*.42;(o.sums||[]).forEach(([a,b,bd,g])=>{const h=bd?20:14;if(Y+h+(g?8:0)>H-M-24)np();if(g){ln(sx,Y+2,W-M,'#999999',.5,1);Y+=8}
   const due=!bd&&/due|payable/i.test(a)&&parseFloat(String(b).replace(/[^\d.]/g,''))>.005;
   if(bd){ln(sx,Y,W-M,'#111111',1);ln(sx,Y+h,W-M,'#111111',1);tx(sx+2,Y+14,a,1,10.5);tx(W-M-2,Y+14,b,1,10.5,'#111111','r')}else{tx(sx+2,Y+10,a,due,9,due?'#d93636':'#444444');tx(W-M-2,Y+10,b,1,9,due?'#d93636':'#111111','r')}Y+=h});
  /* payment sections (same wording as every other renderer), QR drawn as vector squares */
@@ -380,19 +373,18 @@ async function pdfOf(cs){const enc=new TextEncoder(),parts=[],off=[],imgs=[];let
   obj(n+2,'<</Length '+ct.length+'>>\nstream\n'+ct+'\nendstream')});
  const N=3+cs.length*3,x=len;add('xref\n0 '+N+'\n0000000000 65535 f \n');for(let n=1;n<N;n++)add(String(off[n]).padStart(10,'0')+' 00000 n \n');
  add('trailer\n<</Size '+N+'/Root 1 0 R>>\nstartxref\n'+x+'\n%%EOF');return new Blob(parts,{type:'application/pdf'})}
-const shItems=()=>[['down',_sd&&_sd.pdf?'Save PDF to downloads':'Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','WhatsApp',"shareDoc(_sd.o,_sd.name,1,pinc())"],['sms','Short message by SMS',"sendTo(_sd.pid,_sd.bill?billMsg(_sd.bill,1,pinc()):_sd.mf?_sd.mf(pinc()===true):_sd.sms||_sd.msg,'sms',_sd.kind)"]];
+const shItems=()=>[['down','Save image to gallery',"shareDoc(_sd.o,_sd.name,2,pinc())"],['wa','WhatsApp (PDF + message)',"shareDoc(_sd.o,_sd.name,1,pinc())"],['sms','Short message by SMS',"shSms()"]];
 async function shareDoc(o,name,mode,on,ctx){const c=ctx||(_sd&&_sd.o===o?_sd:{}),bill=c.bill||null,includeCurrent=on===true,doc=bill?billDoc(bill,includeCurrent):o;
- if(!mode){_sd={o:doc,name,msg:c.msg||docMsg(doc),sms:c.sms,mf:c.mf,pid:c.pid,kind:c.kind,pr:c.pr,pdf:c.pdf,bill};sheetPay('Share',shItems(),doc);return}
+ if(!mode){_sd={o:doc,name,pid:c.pid,kind:c.kind,pr:c.pr,bill};sheetPay('Share',shItems(),doc);return}
  if(mode==1&&c.pid&&!c.asked&&!phoneOf(c.pid,c.kind))return numAsk(partyOf(c.pid,c.kind),[['Open their WhatsApp chat',n=>shareDoc(o,name,1,on,{...c,asked:1,num:n}),1],['Share the file only (pick the chat yourself)',()=>shareDoc(o,name,1,on,{...c,asked:1})]]);
- const pay=payList(doc,on),vb=c.pdf?pdfDoc(doc,pay):null,cs=vb?null:docPages(doc,pay),fs=[],tx=bill?billMsg(bill,0,includeCurrent):c.mf?c.mf(includeCurrent):c.msg||docMsg(doc);
- if(c.pdf)fs.push(new File([vb||await pdfOf(cs)],name+'.pdf',{type:'application/pdf'}));else for(let p=0;p<cs.length;p++){const bl=await new Promise(r=>cs[p].toBlob(r,'image/jpeg',.85));fs.push(new File([bl],name+(cs.length>1?'-'+(p+1):'')+'.jpg',{type:'image/jpeg'}))}
+ const pay=payList(doc,on),vb=mode!=2?pdfDoc(doc,pay):null,cs=vb?null:docPages(doc,pay),fs=[],tx=docText(doc,pay,0);
+ if(mode!=2)fs.push(new File([vb||await pdfOf(cs)],name+'.pdf',{type:'application/pdf'}));else for(let p=0;p<cs.length;p++){const bl=await new Promise(r=>cs[p].toBlob(r,'image/jpeg',.85));fs.push(new File([bl],name+(cs.length>1?'-'+(p+1):'')+'.jpg',{type:'image/jpeg'}))}
  if(mode!=2&&!c.num){try{if(navigator.canShare&&navigator.canShare({files:fs})){await navigator.share({files:fs,text:tx});return}}catch(e){if(e.name=='AbortError')return}}
  fs.forEach(f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click()});
- if(mode!=2){toast((c.pdf?'PDF':'Image')+' saved. Attach it in WhatsApp');sendTo(c.pid,tx,'wa',c.kind,c.num)}else toast((c.pdf?'PDF':'Image')+' saved to your downloads')}
+ if(mode!=2){toast('PDF saved. Attach it in WhatsApp');sendTo(c.pid,tx,'wa',c.kind,c.num)}else toast('Image saved to your downloads')}
 
-const remText=p=>{const t=payShort().replace(/^Pay by /,'');return 'Dear '+p.name+', your current balance as of '+dIN(Date.now())+' is ₹'+money(p.bal)+' at '+db.shop.name+'.'+(t?' To clear it, kindly pay using '+t+'.':' Kindly clear it at your earliest convenience.')+' Thank you'};
-function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=via||db.shop.via||'wa';p.rem=Date.now();p.u=Date.now();save();sendTo(id,remText(p,via=='sms'),via,'c');render()}
-function remindImg(id){const p=db.parties.find(x=>x.id==id);if(!p)return;p.rem=Date.now();p.u=Date.now();save();shareDoc(ledgerDoc('c',id),'Statement-'+p.name.replace(/\W+/g,'_'),1,undefined,{msg:remText(p),sms:remText(p,1),pid:id,kind:'c',pdf:1});render()}
+function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p)return;via=via||db.shop.via||'wa';p.rem=Date.now();p.u=Date.now();save();const d=ledgerDoc('c',id);sendTo(id,docText(d,payList(d),via=='sms'),via,'c');render()}
+function remindImg(id){const p=db.parties.find(x=>x.id==id);if(!p)return;p.rem=Date.now();p.u=Date.now();save();shareDoc(ledgerDoc('c',id),'Statement-'+p.name.replace(/\W+/g,'_'),1,undefined,{pid:id,kind:'c'});render()}
 /* ---------- more ---------- */
 
 
@@ -560,19 +552,31 @@ function payInfo(amt,ref,on,cur,due,bal){const s=db.shop,m=s.payshow||'both';if(
  const nm=(s.upn||s.name||'Shop').slice(0,30),o={amt,ref,cur,bal:!!bal,due:due!==false,u,b,id:s.upi,name:nm,bank:{n:s.bkn||'',h:s.bkh||s.name||'',a:s.bka||'',i:String(s.bki||'').toUpperCase()}};
  if(u){o.link='upi://pay?pa='+s.upi+'&pn='+encodeURIComponent(nm)+'&am='+(Math.round(amt*100)/100).toFixed(2)+'&cu=INR&tn='+encodeURIComponent(ref||'Payment');o.qr=QR.make(o.link)}return o}
 function sheetPay(t,items,o){sheet(t,items);if(o&&o.balAmt>0.005&&!o.balAuto){const on=(db.shop.payshow||'both')!='off'&&payAvail();$('#shb .sht').insertAdjacentHTML('afterend','<label class="shi pc"><input type="checkbox" id="pinc"><span>'+(on?'Include current balance and payment details':'Include current balance')+' (₹'+money(o.balAmt)+')</span></label>')}}
-/* A document carries up to two separate sections: (1) payment details for the current digital payment (always, new transactions only),
-   (2) a "current balance" section (only when chosen; statements always). Both reach print, image/PDF and message through these helpers. */
-function payList(o,on){const a=payInfo(o.payAmt,o.payRef,true,0,false),b=o.balAmt>0.005&&(o.balAuto||on===true)?payInfo(o.balAmt,'Current balance',true,0,true,1):null;if(a&&b)a.sec=b;return a||b}
-const payBoxes=p=>p?[p,...(p.sec?[p.sec]:[])]:[];
+/* A document carries ONE payment section: the current balance + payment details when that option is ticked (statements always), otherwise the
+   payment details for a recent digital payment. It reaches print, image/PDF and message through these helpers. */
+function payList(o,on){return o.balAmt>0.005&&(o.balAuto||on===true)?payInfo(o.balAmt,'Current balance',true,0,true,1):payInfo(o.payAmt,o.payRef,true,0,false)}
+const payBoxes=p=>p?[p]:[];
 /* customer's current balance for documents and messages; a walk-in customer (no account) has none */
 const custBal=pid=>{const q=pid&&db.parties.find(x=>x.id==pid);return q&&q.bal>0.005?Math.round(q.bal*100)/100:0};
 /* shared message tail for WhatsApp and SMS: payment details for a current digital payment, then the current-balance section when chosen */
-function msgTail(now,bal,inc){const t=payShort().replace(/^Pay by /,''),L=[];if(now&&t)L.push('Payment details: '+t);if(inc&&bal>0.005)L.push('Current balance as of '+dIN(Date.now())+': ₹'+money(bal)+(t?'. To clear it, kindly pay using '+t:''));return L}
+function msgTail(now,bal,inc){const t=payShort().replace(/^Pay by /,''),L=[];if(inc&&bal>0.005)L.push('Current balance as of '+dIN(Date.now())+': ₹'+money(bal)+(t?'. To clear it, kindly pay using '+t:''));else if(now&&t)L.push('Payment details: '+t);return L}
+/* ---- ONE share-text builder for WhatsApp (detailed) and SMS (short), for every document. It reads the same document and the same payment-section
+   choice (payList) that print, image and PDF use, and adds the UPI link where print draws the QR. ---- */
+function docText(o,pay,sms){const s=db.shop,cl=o.cols||[],hi=h=>cl.findIndex(c=>c.h==h),qi=hi('Qty'),ai=hi('Amount'),ri=hi('Rate'),
+ row=r=>qi>=0&&ai>=0?r[0]+' × '+r[qi]+(ri>=0?' @ '+r[ri]:'')+' = ₹'+r[ai]:[r[0],r[1],...cl.slice(2).map((c,i)=>r[i+2]?c.h+' '+r[i+2]:'')].filter(Boolean).join(' · '),
+ rr=sms?[]:(o.rows||[]),part=rr.length>25?rr.slice(-25):rr,bd=t=>sms?t:'*'+t+'*',
+ L=[bd(s.name||''),o.title||'',...(o.meta||[]).slice(0,sms?3:99).map(([a,b])=>a+': '+b)];
+ if(part.length)L.push('',rr.length>part.length?'Last '+part.length+' of '+rr.length+' entries (full list in the attached PDF):':'Items:',...part.map(row));
+ const sm=(o.sums||[]).filter(r=>!sms||r[2]||/paid|received|due|balance|total/i.test(r[0]));if(sm.length)L.push('',...sm.map(r=>r[0]+': '+r[1]));
+ if(pay){L.push('',pay.bal?'Current balance as of '+dIN(Date.now())+': ₹'+money(pay.amt)+(pay.u||pay.b?'. To clear it, kindly pay using:':''):'Payment details for ₹'+money(pay.amt)+':');
+  if(pay.u)L.push('UPI: '+pay.link,...(sms?[]:['UPI ID: '+pay.id]));if(pay.b)L.push('Bank: '+[pay.bank.n,pay.bank.h].filter(Boolean).join(' - ')+', A/c '+pay.bank.a+', IFSC '+pay.bank.i)}
+ L.push('','Thank you');return L.join('\n')}
+function shSms(){const c=_sd,on=pinc(),doc=c.bill?billDoc(c.bill,on===true):c.o;sendTo(c.pid,docText(doc,payList(doc,on),1),'sms',c.kind)}
 function payShort(){const s=db.shop,m=s.payshow||'both';if(m=='off')return'';const L=[];if(upiOk(s.upi)&&m!='bank')L.push('Pay by UPI: '+s.upi);if(bankOk()&&m!='upi')L.push('Bank A/c '+s.bka+' IFSC '+String(s.bki).toUpperCase());return L.join(' | ')}
 
 /* ONE place for the QR box wording. due=false: a payment made now, so the box only labels the code (no "pay"). due=true: a balance, so it asks to clear it. */
 function payHead(p){if(p.bal)return{t:'CURRENT BALANCE AS OF '+dIN(Date.now()),n:p.u?(p.b?['To clear it, kindly scan the QR code or pay','using the bank account details below']:['To clear it, kindly scan the QR code','or pay using the UPI ID below']):p.b?['To clear it, kindly pay using','the bank account details below']:[]};return p.u?{t:'QR CODE FOR',n:[]}:{t:'BANK DETAILS',n:[],noAmt:1}}
-function payLines(p){if(!p)return[];if(p.sec)return[...payLines({...p,sec:null}),'',...payLines(p.sec)];const c=t=>' '.repeat(Math.max(0,(W-t.length)>>1))+t,wr=t=>{const r=[];for(let i=0;i<t.length;i+=W)r.push(t.slice(i,i+W));return r},ww=t=>{const r=[];let l='';t.split(' ').forEach(w=>{if(l&&(l+' '+w).length>W){r.push(l);l=w}else l=l?l+' '+w:w});if(l)r.push(l);return r},h=payHead(p),o=[(p.bal?'='.repeat(W):'-'.repeat(W)),...ww(h.t).map(c),...(h.noAmt?[]:[c('Rs '+money(p.amt))]),...ww(h.n.join(' ')).map(c)];
+function payLines(p){if(!p)return[];const c=t=>' '.repeat(Math.max(0,(W-t.length)>>1))+t,wr=t=>{const r=[];for(let i=0;i<t.length;i+=W)r.push(t.slice(i,i+W));return r},ww=t=>{const r=[];let l='';t.split(' ').forEach(w=>{if(l&&(l+' '+w).length>W){r.push(l);l=w}else l=l?l+' '+w:w});if(l)r.push(l);return r},h=payHead(p),o=[...(p.bal?['']:[]),(p.bal?'='.repeat(W):'-'.repeat(W)),...ww(h.t).map(c),...(h.noAmt?[]:[c('Rs '+money(p.amt))]),...ww(h.n.join(' ')).map(c)];
  if(p.qr)o.push('\u0001QR\u0001');if(p.u)o.push(...wr('UPI: '+p.id));
  if(p.b){if(p.bank.n)o.push(...wr('Bank: '+p.bank.n));if(p.bank.h)o.push(...wr('Name: '+p.bank.h));o.push(...wr('A/c: '+p.bank.a),...wr('IFSC: '+p.bank.i))}return o}
 const dIN=t=>new Date(t).toLocaleDateString('en-IN'),smsSafe=t=>String(t).replace(/₹/g,'Rs ').replace(/[−–—]/g,'-').replace(/[·•]/g,'-').replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
@@ -992,7 +996,7 @@ function supView(id,rep,fresh){const p0=db.sups.find(x=>x.id==id);if(!p0)return;
 function savePayS(id){const a=Math.round(+$('#ra').value*100)/100;if(!(a>0))return bad('#ra','Enter the amount paid');let y;{const t0=tOn($('#rd').value||today()),rf=(($('#rrf')||{}).value||'').trim(),sp=segVal('rm')=='Split'?spVals():[{m:segVal('rm')||'Cash',a}];if(!sp.length)return bad('#sp_Cash','Enter the split amounts');sp.forEach(x=>{y={id:uid(),no:nextPNo(),sid:id,amt:x.a,mode:x.m,t:t0,...(rf?{ref:rf}:{})};db.spays.unshift(y)})}recalc();save();render();spayView(y.id,1,1);toast('Payment recorded')}
 function delSup(id,ok){const q=db.sups.find(x=>x.id==id);if(q&&Math.abs(q.bal)>=.005)return warn('Settle the balance before deleting this supplier.');if(!ok&&(ask('Delete this supplier? Past purchase bills keep the name.','Yes, delete',"delSup('"+id+"',1)"),1))return;db.sups=db.sups.filter(x=>x.id!=id);db.tomb[id]=Date.now();if(psup==id)psup='';save();toast('Supplier deleted');pgClose()}
 /* bill, receipt, purchase and note pages */
-function billShare(id){const b=db.bills.find(x=>x.id==id);if(!b)return;const o=billDoc(b,false);_sd={o,name:'Bill-'+b.no,msg:billMsg(b),sms:billMsg(b,1),pid:b.pid,kind:'c',bill:b,pr:`printBill(db.bills.find(x=>x.id=='${id}'))`};
+function billShare(id){const b=db.bills.find(x=>x.id==id);if(!b)return;const o=billDoc(b,false);_sd={o,name:'Bill-'+b.no,pid:b.pid,kind:'c',bill:b,pr:`printBill(db.bills.find(x=>x.id=='${id}'))`};
  sheetPay('Share this bill',shItems(),o)}
 
 /* ===================== TRANSACTION SUMMARY PAGES =====================
@@ -1266,9 +1270,9 @@ function spayView(id,rep,fresh){txnView('spay',id,rep,fresh)}
 function expView(id,rep,fresh){txnView('exp',id,rep,fresh)}
 function noteView(id,rep,fresh){txnView('note',id,rep,fresh)}
 function voidBill(id,ok){const b=db.bills.find(x=>x.id==id);if(b&&!b.void&&db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first.');if(!b||b.void||!ok&&(ask('Cancel Bill '+b.no+'? Stock and the customer balance will be restored.','Yes, cancel',"voidBill('"+id+"',1)"),1))return;b.void=true;b.vt=Date.now();b.u=Date.now();recalc();save();render();pgRefresh();toast('Bill cancelled')}
-function paySheet(id){const y=db.pays.find(x=>x.id==id);if(!y)return;const o=payDoc(y);_sd={o,name:'Receipt-'+(y.no||'payment'),msg:payMsg(y),sms:payMsg(y,1),mf:i=>payMsg(y,0,i),pid:y.pid,kind:'c',pr:`printPay('${id}')`};
+function paySheet(id){const y=db.pays.find(x=>x.id==id);if(!y)return;const o=payDoc(y);_sd={o,name:'Receipt-'+(y.no||'payment'),pid:y.pid,kind:'c',pr:`printPay('${id}')`};
  sheetPay('Share receipt',shItems(),o)}
-function spayShare(id){const y=db.spays.find(x=>x.id==id);if(!y)return;const p=db.sups.find(x=>x.id==y.sid)||{name:''};_sd={o:spayDoc(y),name:'Payment-'+p.name.replace(/\W+/g,'_'),msg:spayMsg(y),sms:spayMsg(y,1),pid:y.sid,kind:'s'};
+function spayShare(id){const y=db.spays.find(x=>x.id==id);if(!y)return;const p=db.sups.find(x=>x.id==y.sid)||{name:''};_sd={o:spayDoc(y),name:'Payment-'+p.name.replace(/\W+/g,'_'),pid:y.sid,kind:'s'};
  sheet('Share payment',shItems())}
 function voidP(id,ok){const p=db.purch.find(x=>x.id==id);if(p&&!p.void&&db.notes.some(n=>!n.void&&n.ref==id))return warn('This purchase has a return. Cancel the debit note first.');if(!p||p.void||!ok&&(ask('Cancel this purchase? Stock and the supplier balance will be reversed.','Yes, cancel',"voidP('"+id+"',1)"),1))return;p.void=true;p.vt=Date.now();p.u=Date.now();const rp=syncCosts(p.lines.map(l=>l.id));recalc();save();render();pgRefresh();toast('Purchase cancelled'+(rp?' · selling price restored for '+rp+' item'+(rp==1?'':'s'):''))}
 function voidN(id,ok){const n=db.notes.find(x=>x.id==id);if(!n||n.void||!ok&&(ask('Cancel this note? Stock and balances will go back.','Yes, cancel',"voidN('"+id+"',1)"),1))return;n.void=true;n.vt=Date.now();n.u=Date.now();noteSync(n);recalc();save();render();pgRefresh();toast('Note cancelled')}
@@ -1314,15 +1318,13 @@ function ledgerText(kind,id,pay){const p=lgOwner(kind,id),A=lgRows(kind,id),{R,s
  o.push('-'.repeat(W),p.walk?lr('Net sales Rs',money(A.reduce((t,x)=>t+x.a,0))):lr(lgLabel(kind,p)+' Rs',money(Math.abs(p.bal))));if(pay)o.push(...payLines(pay));o.push('','','');return o.join('\n')}
 function ledgerPrint(kind,id){pickPrint(ledgerDoc(kind,id),pay=>ledgerText(kind,id,pay))}
 
-function ledgerImg(kind,id){const p=lgOwner(kind,id);shareDoc(ledgerDoc(kind,id),'Statement-'+p.name.replace(/\W+/g,'_'),0,0,{pid:id,kind,pdf:1,pr:`ledgerPrint('${kind}',${id})`})}
+function ledgerImg(kind,id){const p=lgOwner(kind,id);shareDoc(ledgerDoc(kind,id),'Statement-'+p.name.replace(/\W+/g,'_'),0,0,{pid:id,kind,pr:`ledgerPrint('${kind}',${id})`})}
 const lgHead=(k,id,has)=>`<div class="line sp top"><div class="sec">Statement</div><div class="ics" style="align-items:flex-start;min-width:0">${lgFilter(k,id)}${has?lgBtns(k,id):''}</div></div>`,lgBtns=(kind,id)=>`<span class="ics"><button class="ib" aria-label="Image · share or save to gallery" onclick="ledgerImg('${kind}',${id})">${ic('share')}</button><button class="ib" aria-label="Print statement" onclick="ledgerPrint('${kind}',${id})">${ic('print')}</button></span>`;
 /* estimates */
 function nextEstNo(){const P='E'+DEV;let m=0;db.est.forEach(e=>{const x=String(e.no);if(x.startsWith(P)&&/^\d+$/.test(x.slice(P.length)))m=Math.max(m,+x.slice(P.length))});return P+(m+1)}
 function newEst(){flowFrom();if(editId||estId||editEstId||!isEst)resetSale();closeAll();isEst=true;tab='bill';render()}
-function estMsg(e,sms){const s=db.shop,n=e.lines.length;if(!sms)return s.name+'\nEstimate '+e.no+' · ₹'+money(e.total);
- return s.name+': Estimate '+e.no+' dated '+dIN(e.t)+', '+n+' item'+(n==1?'':'s')+', total ₹'+money(e.total)+' (GST included). Thank you'}
 function estDoc(e){return{barcode:transactionBarcode('estimate',e.id),title:(e.void?'CANCELLED ':'')+'ESTIMATE',meta:[['Estimate no',e.no],['Date',new Date(e.t).toLocaleDateString('en-IN',{dateStyle:'medium'})],['Customer',e.cust||'Walk-in'],['Note','Not a tax invoice']],cols:[{h:'Item',w:.40},{h:'Qty',w:.12,al:'r'},{h:'Rate',w:.22,al:'r'},{h:'Amount',w:.26,al:'r'}],rows:e.lines.map(l=>[l.n,qtxt(l),rateTxt(l),money(lgross(l))]),sums:[...(billDisc(e)>0.004?[['Discount'+dPctB(e),'−₹'+money(billDisc(e))]]:[]),['Total (GST included)','₹'+money(e.total),1]]}}
-function estShare(id){const e=db.est.find(x=>x.id==id);if(!e)return;_sd={o:estDoc(e),name:'Estimate-'+e.no,msg:estMsg(e),sms:estMsg(e,1),pid:e.pid,kind:'c'};
+function estShare(id){const e=db.est.find(x=>x.id==id);if(!e)return;_sd={o:estDoc(e),name:'Estimate-'+e.no,pid:e.pid,kind:'c'};
  sheet('Share estimate',shItems())}
 function voidEst(id,ok){const e=db.est.find(x=>x.id==id);if(!e||!ok&&(ask('Cancel this estimate?','Yes, cancel',"voidEst('"+id+"',1)"),1))return;e.void=true;e.u=Date.now();save();render();pgRefresh();toast('Estimate cancelled')}
 /* reports */
