@@ -237,7 +237,7 @@ function billWarranty(b){
   if(!map.has(key)){
    const sym=W_SYMS[legend.length]||('W'+(legend.length+1));
    map.set(key,sym);
-   legend.push({key,sym,wv:l.wv,wu,exp,text:sym+' '+wFmt(l.wv,wu)+' Warranty'+(exp?' (Exp: '+dtf(exp)+')':'')});
+   legend.push({key,sym,wv:l.wv,wu,exp,text:sym+' '+wFmt(l.wv,wu)+' Warranty'+(exp?' (Up to: '+dtf(exp)+')':'')});
   }
  });
  return{map,legend,policy:legend.length?W_POLICY:''};
