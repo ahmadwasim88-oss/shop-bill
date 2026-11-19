@@ -1891,7 +1891,7 @@ function undoBillTot(){if(!billPreSnap)return;const snap=billPreSnap;billPreSnap
 function blurBillTot(){const t=$('#ctot'),inp=$('#ctot_inp');if(!t||!inp)return;inp.hidden=true;t.style.display='';const val=+inp.value||0;if(!(val>0))return cartUpd();const ls=shown().map(line).filter(Boolean);if(!ls.length)return cartUpd();const curT=totals(ls).t;if(Math.abs(val-curT)<=0.005)return cartUpd();
  const origBase=billPreSnap?billPreSnap.tot:curT;
  if(val<origBase-0.005){warn('Lower total not allowed — use Extra discount on the whole bill instead');return cartUpd()}
- const snap={tot:curT,cart:cart.map(l=>JSON.parse(JSON.stringify(l)))};
+ const snap=billPreSnap||{tot:curT,cart:cart.map(l=>JSON.parse(JSON.stringify(l)))};
  let targetGross=val+(totals(ls).bd||0),curGross=ls.reduce((s,l)=>s+l.gross,0);if(!(curGross>0))return cartUpd();
  const factor=targetGross/curGross;
  let mrpHit=0;
