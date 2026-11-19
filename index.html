@@ -175,7 +175,7 @@ function outSheet(i){sheet(i.name+' has no stock. Add stock first, then continue
 function stockFirst(id){const d=$('#ied'),go=()=>buyItem(id,1);stopScan();edPend=null;if(d&&d.open){d.addEventListener('close',go,{once:true});d.close()}else go()} /* wait for the picker's own close handling to finish, or it resets the details pop-up that the purchase opens */
 function saleResume(ok){const id=salePend;salePend=null;tab='bill';render();const i=ok&&db.items.find(x=>x.id==id);if(i&&!sOut(i))add(id)}
 function addCode(c){const i=db.items.find(x=>x.code==c);if(i)add(i.id);else{uiConfirm('Barcode '+c+' not found. Add as new item?','Add item').then(ok=>{if(ok){itemForm(0,c);saleAddFlag=true}})}}
-function add(id){const i0=db.items.find(x=>x.id==id);if(i0&&sOut(i0))return outSheet(i0);const l=cart.find(x=>x.id==id);if(!l)cart.push({id,q:0});else if(l.q>0){edPre={...l};l.q+=1}edShow('s',id,1);render()}
+function add(id){const i0=db.items.find(x=>x.id==id);if(i0&&sOut(i0))return outSheet(i0);const l=cart.find(x=>x.id==id);if(!l)cart.push({id,q:0,...(i0&&i0.wv>0?{wv:i0.wv,wu:i0.wu||'m'}:{})});else if(l.q>0){edPre={...l};l.q+=1}edShow('s',id,1);render()}
 function rmLine(id){cart=cart.filter(x=>x.id!=id);render()}
 function setq(id,v){const l=cart.find(x=>x.id==id);if(!l)return;v=Math.round((+v||0)*1000)/1000;edTouch=1;l.q=v>0?v:0;render()}
 function qty(id,d){const l=cart.find(x=>x.id==id);setq(id,Math.round((l.q+d)*1000)/1000)}
@@ -212,6 +212,42 @@ function heldChip(){if(editId||editEstId)return'';const n=heldOf().length,o=HELD
 const tabSy={};let tabNew=0;
 let itemQ='',partyQ='',_rt;
 const srt=(a,k)=>[...a].sort((x,y)=>String(x[k]).localeCompare(String(y[k])));
+
+/* ---------- warranty ---------- */
+const W_SYMS=['*','**','***','#','^','+','~','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+const W_POLICY='Warranty Policy: Warranty claims, repairs, and replacements are handled directly by the manufacturer or authorized service center as per their terms.';
+const wUnit=(v,u)=>({d:v==1?'Day':'Days',w:v==1?'Week':'Weeks',m:v==1?'Month':'Months',y:v==1?'Year':'Years'}[u]||'Months');
+const wFmt=(v,u)=>v>0?v+' '+wUnit(v,u):'';
+function wExpDate(t,v,u){
+ if(!(v>0))return'';
+ const d=new Date(t),yr=d.getFullYear(),mo=d.getMonth(),dy=d.getDate();
+ let r;
+ if(u=='y'){const ty=yr+v,last=new Date(ty,mo+1,0).getDate();r=new Date(ty,mo,Math.min(dy,last))}
+ else if(u=='m'){const tm=mo+v,ty=yr+Math.floor(tm/12),rm=((tm%12)+12)%12,last=new Date(ty,rm+1,0).getDate();r=new Date(ty,rm,Math.min(dy,last))}
+ else if(u=='w'){r=new Date(yr,mo,dy+v*7)}
+ else{r=new Date(yr,mo,dy+v)}
+ return r.getFullYear()+'-'+String(r.getMonth()+1).padStart(2,'0')+'-'+String(r.getDate()).padStart(2,'0');
+}
+function billWarranty(b){
+ const map=new Map(),legend=[];
+ if(!b||!Array.isArray(b.lines))return{map,legend,policy:''};
+ b.lines.forEach(l=>{
+  if(!(l.wv>0))return;
+  const wu=l.wu||'m',exp=l.we||wExpDate(b.t,l.wv,wu),key=l.wv+'|'+wu+'|'+exp;
+  if(!map.has(key)){
+   const sym=W_SYMS[legend.length]||('W'+(legend.length+1));
+   map.set(key,sym);
+   legend.push({key,sym,wv:l.wv,wu,exp,text:sym+' '+wFmt(l.wv,wu)+' Warranty'+(exp?' (Exp: '+dtf(exp)+')':'')});
+  }
+ });
+ return{map,legend,policy:legend.length?W_POLICY:''};
+}
+function wLineName(l,b,W){
+ if(!(l&&l.wv>0)||!W)return l.n;
+ const key=l.wv+'|'+(l.wu||'m')+'|'+(l.we||wExpDate(b.t,l.wv,l.wu||'m')),sym=W.map.get(key);
+ return sym?sym+' '+l.n:l.n;
+}
+const lineW=l=>{const wv=l.wv!==undefined?(+l.wv||0):(+((l.i||{}).wv)||0);return wv>0?{wv,wu:l.wu||(l.i&&l.i.wu)||'m'}:null};
 
 /* ---------- sales ---------- */
 const dueOf=b=>b.total-(b.paid??b.total);
@@ -270,7 +306,7 @@ const partyOf=(pid,kind)=>kind=='s'?db.sups.find(x=>x.id==pid):kind=='c'?db.part
 /* ONE prompt for a missing phone number (SMS, WhatsApp). acts=[[label,run(number),needsNumber]]. A saved customer/supplier gets the number saved to the profile first, then sending goes on as usual. */
 /* number as WhatsApp / SMS links want it (country code added to a 10-digit number) */
 const waNum=d=>{const cc=(db.shop.cc||'91').replace(/\D/g,'');return d?(d.length==10?cc+d:d.replace(/^0+/,'')):''};
-const saveFile=f=>{const a=document.createElement('a');a.href=URL.createObjectURL(f);a.download=f.name;a.click()};
+const saveFile=f=>{const a=document.createElement('a'),u=URL.createObjectURL(f);a.href=u;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000)};
 /* Hand a file to the phone's share sheet (the user picks the app and chat; a browser cannot target one chat with an attachment).
    WhatsApp drops the text that goes with a PDF, so the caption is also copied: paste it as the caption. Without file sharing the file is saved instead. */
 async function copyText(t){
@@ -291,10 +327,10 @@ function sendTo(pid,text,via,kind,keep){const p=partyOf(pid,kind),
  go=n=>{if(via=='sms')location.href='sms:'+(n?'+'+n:'')+'?body='+encodeURIComponent(smsSafe(text));else window.open('https://wa.me/'+n+'?text='+encodeURIComponent(text),'_blank')},ph=phoneOf(pid,kind);
  if(ph)return go(waNum(ph));
  numAsk(p,p?[['Save number and send '+(via=='sms'?'SMS':'on WhatsApp'),n=>go(waNum(n)),1]]:[['Send '+(via=='sms'?'SMS':'on WhatsApp'),n=>go(waNum(n)),1],['Choose a contact in the app instead',()=>go('')]],keep)}
-function billDoc(b,includeCurrent){const bp=b.void?null:billPay(b),st=BillLayout.settle(b),fm=(l,v)=>/^Discount/.test(l)?'−₹'+money(-v):l=='Round off'?(v>0?'+':'-')+money(Math.abs(v)):'₹'+money(v),
+function billDoc(b,includeCurrent){const WR=billWarranty(b),bp=b.void?null:billPay(b),st=BillLayout.settle(b),fm=(l,v)=>/^Discount/.test(l)?'−₹'+money(-v):l=='Round off'?(v>0?'+':'-')+money(Math.abs(v)):'₹'+money(v),
  sums=sumGroups(BillLayout.totals(b).map(([l,v,bd])=>bd?[l,fm(l,v),1]:[l,fm(l,v)]),retRows(b,0,v=>v<0?'−₹'+money(-v):'₹'+money(v)),[...st.rows.map(([l,v])=>[l,'₹'+money(v)]),...(b.pid?[['Due','₹'+money(st.due)]]:[])],BillBalanceDisplay.rows(b));
  return{...asOnOf(b),barcode:transactionBarcode('bill',b.id),title:(b.void?'CANCELLED ':'')+(compSch()?'BILL OF SUPPLY':shopSt()?'TAX INVOICE':'BILL'),meta:[['Invoice no',b.no],['Date',new Date(b.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',b.cust||'Walk-in'],...(b.cg?[['GSTIN',b.cg]]:[]),...(b.pos?[['Place of supply',b.pos+' '+(STATES[b.pos]||'')]]:[])],
- cols:[{h:'Item',w:.30},{h:'HSN',w:.13},{h:'Qty',w:.09,al:'r'},{h:'Rate',w:.17,al:'r'},{h:'GST',w:.09,al:'r'},{h:'Amount',w:.22,al:'r'}],rows:b.lines.map(l=>[l.n,l.h||'',qtxt(l),rateTxt(l),(l.g||0)+'%',money(lgross(l))]),sums,payAmt:bp?bp.amt:0,balAmt:b.void?0:custBal(b.pid),payRef:'Bill '+b.no}}
+ cols:[{h:'Item',w:.30},{h:'HSN',w:.13},{h:'Qty',w:.09,al:'r'},{h:'Rate',w:.17,al:'r'},{h:'GST',w:.09,al:'r'},{h:'Amount',w:.22,al:'r'}],rows:b.lines.map(l=>[wLineName(l,b,WR),l.h||'',qtxt(l),rateTxt(l),(l.g||0)+'%',money(lgross(l))]),sums,warranty:WR.legend.length?WR:null,payAmt:bp?bp.amt:0,balAmt:b.void?0:custBal(b.pid),payRef:'Bill '+b.no}}
 function payDoc(y){const rp=recPay(y),p=db.parties.find(x=>x.id==y.pid)||{name:''},L=ledger(y.pid).find(x=>x.k=='p'&&x.r.id==y.id);
  return{...asOnOf(y),barcode:transactionBarcode('receipt',y.id),title:'PAYMENT RECEIPT',meta:[['Receipt no',na(y.no)],['Date',new Date(y.t).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})],['Customer',p.name]],cols:[],rows:[],sums:sumGroups([['Received ('+(y.mode||'Cash')+')','₹'+money(y.amt),1]],balOf(L)),payAmt:rp?rp.amt:0,balAmt:custBal(y.pid),payRef:'Receipt '+(y.no||'')}}
 function docPages(o,pay){o=prepDoc(o,pay);
@@ -310,9 +346,10 @@ function docPages(o,pay){o=prepDoc(o,pay);
   if(p.u)pl.push(['UPI ID',F(15),C.mut,22],[p.id,F(16,1),C.ink,26]);
   if(p.b){const bn=[p.bank.n,p.bank.h].filter(Boolean).join(' · ');if(bn)pl.push([bn,F(15),C.ink,24]);pl.push(['A/c '+p.bank.a+' · IFSC '+p.bank.i,F(15,1),C.ink,26])}
   return{p,ql,qs,pl,h:Math.max(ql?qs+60:0,pl.reduce((a,l)=>a+l[3],0)+30),gap:p.bal?46:22}}),payT=bx.reduce((a,b)=>a+b.h+b.gap,0),
+  wrBox=(()=>{if(!o.warranty||!o.warranty.legend.length)return null;mc.font=F(13);const leg=o.warranty.legend.flatMap(x=>wrap(mc,x.text,CW-8,10));mc.font=F(12);const pol=wrap(mc,o.warranty.policy,CW-8,10);return{leg,pol,h:12+20+leg.length*18+4+pol.length*16+6,gap:14}})(),
   isTax=a=>/^(taxable|cgst|sgst|igst|round off|discount)/i.test(a),balStart=o.sums.findIndex(r=>/^Balances as on |^Previous balance$/i.test(r[0])),
   sh=o.sums.map((x,j)=>(balStart>=0&&j>=balStart)?(/^Balances as on /i.test(x[0])?28:x[2]?38:32)+(j===balStart?12:0)+(j===o.sums.length-1?10:0):(x[2]?46:isTax(x[0])?28:34)+(x[3]&&!(j>0&&o.sums[j-1][2])?10:0)),
-  T=14+sh.reduce((a,b)=>a+b,0)+10+payT+64+(o.barcode?92:0),
+  T=14+sh.reduce((a,b)=>a+b,0)+10+payT+(wrBox?wrBox.gap+wrBox.h:0)+64+(o.barcode?92:0),
  H1=Math.max(112,60+(s.addr?26:0)+(shopPh()?24:0)+(s.gstin?24:0)+26),H2=58,HD=42,mH=o.meta.length?Math.ceil(o.meta.length/2)*54+26:0,LD=o.lead?50:0,
  cap1=PH-H1-18-mH-18-LD-(cols.length?HD:0),capN=PH-H2-18-(cols.length?HD:0),pg=[];
  let cur={r:[],h:0},cap=cap1;
@@ -344,6 +381,11 @@ function docPages(o,pay){o=prepDoc(o,pay);
    bx.forEach(({p:pay,ql,qs,pl,h:payH,gap})=>{y+=gap;g.fillStyle='#f8faff';rr(g,M,y,CW,payH,16);g.fill();g.setLineDash([9,7]);g.lineWidth=2;g.strokeStyle=pay.bal?C.mut:C.br;g.stroke();g.setLineDash([]);
     let cy=y+16;const lw=CW-48-(ql?qs+24:0);g.textAlign='left';pl.forEach(([t,f,col,adv])=>{cy+=adv;g.font=f;g.fillStyle=col;g.fillText(fit(g,t,lw),M+24,cy-7)});
     if(ql){const qy=y+(payH-qs-30)/2;QR.draw(g,pay.qr,M+CW-qs-24,qy,qs,k);g.font=F(13);g.fillStyle=C.mut;g.textAlign='center';g.fillText('Scan with any UPI app',M+CW-qs/2-24,qy+qs+22)}y+=payH});
+   if(wrBox){y+=wrBox.gap;g.fillStyle=C.ln;g.fillRect(M,y,CW,1);
+    let wy=y+12;g.textAlign='left';g.font=F(13,1);g.fillStyle=C.mut;wy+=18;g.fillText('Warranty',M+2,wy-3);
+    g.font=F(13);wrBox.leg.forEach(t=>{wy+=18;g.fillText(t,M+2,wy-3)});
+    wy+=4;g.font=F(12);wrBox.pol.forEach(t=>{wy+=16;g.fillText(t,M+2,wy-3)});
+    y+=wrBox.h}
    y+=34;g.textAlign='center';g.font=F(15);g.fillStyle='#8a97a8';g.fillText('Thank you for your business!',Wd/2,y);if(o.barcode){y+=12;TxEAN13.draw(g,o.barcode,Wd/2,y,680,42)}}
   return c})}
   /* ---- statement PDF: the A5 print layout drawn as a real PDF (selectable text, small file). The standard PDF fonts have no ₹ or non-Latin letters:
@@ -406,7 +448,16 @@ function pdfDoc(o,pay){o=prepDoc(o,pay);
   if(bd){Y+=2;ln(sx,Y,W-M,'#111111',1);ln(sx,Y+15,W-M,'#111111',1);tx(sx+2,Y+10.5,a,0,8.5);tx(W-M-2,Y+10.5,b,1,8.5,'#111111','r');Y+=18}
   else if(tax){tx(sx+2,Y+8,a,0,7,'#555555');tx(W-M-2,Y+8,b,0,7,'#444444','r');Y+=10.5}
   else{tx(sx+2,Y+9,a,due,8,due?'#d93636':'#444444');tx(W-M-2,Y+9,b,due?1:0,8,due?'#d93636':'#111111','r');Y+=12.5}});
- Y=Math.max(Y,Y0+rowH)+14;if(Y>H-M-24)np();tx(W/2,Y,'Thank you!',0,8,'#777777','c');
+Y=Math.max(Y,Y0+rowH)+10;
+ if(o.warranty&&o.warranty.legend.length){
+  const legL=o.warranty.legend.flatMap(x=>wrap(T(x.text),0,7,CW,4)),polL=wrap(T(o.warranty.policy),0,6.5,CW,6),wh=16+legL.length*9.5+2+polL.length*8.5;
+  if(Y+wh>H-M-24)np();
+  ln(M,Y,W-M,'#dddddd',.5);
+  let wy=Y+10;tx(M,wy,'Warranty',1,7,'#666666');
+  legL.forEach(t=>{wy+=9.5;tx(M,wy,t,0,7,'#555555')});
+  wy+=2;polL.forEach(t=>{wy+=8.5;tx(M,wy,t,0,6.5,'#777777')});
+  Y+=wh+10}
+ if(Y>H-M-24)np();tx(W/2,Y,'Thank you!',0,8,'#777777','c');
  pgs.forEach((p,i)=>{ops=p;tx(W/2,H-14,'Page '+(i+1)+' of '+pgs.length,0,7.5,'#888888','c')});
  if(bad)return null;
  const parts=[],off=[],enc=new TextEncoder();let len=0;const add=t=>{const b=enc.encode(t);parts.push(b);len+=b.length},ob=(n,t)=>{off[n]=len;add(n+' 0 obj\n'+t+'\nendobj\n')};
@@ -485,7 +536,7 @@ function billScan(){scan(()=>{},'bill')}
 function scBillAdd(c){const i=db.items.find(x=>x.code==c);
  if(!i){scUnk=c;scOut=0;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
  if(sOut(i)){scUnk='';scOut=i.id;scanFlash('bad');try{navigator.vibrate&&navigator.vibrate(120)}catch(e){}scBillDraw();return}
- scUnk='';scOut=0;const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1});
+ scUnk='';scOut=0;const l=cart.find(x=>x.id==i.id);if(l)l.q=l.q>0?Math.round((l.q+1)*1000)/1000:1;else cart.push({id:i.id,q:1,...(i.wv>0?{wv:i.wv,wu:i.wu||'m'}:{})});
  scanLastId=i.id;scannerBeep();scanFlash('ok');const st=$('#scanStatus');if(st)st.textContent='Added · '+i.name;render();scBillDraw();const sl=$('#scl');if(sl)sl.scrollTop=0}
 function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l||(d<-1&&l.q+d<-1e-9))return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
 function scAddStock(){const id=scOut;scOut=0;stopScan();stockFirst(id)}
@@ -506,7 +557,7 @@ async function scan(cb,context='item'){
  if(title)title.textContent=context==='transaction'||context==='quick'?'Scan item or transaction':'Scan item barcode';
  if(sub)sub.textContent=context==='transaction'?'Item codes find related transactions · document codes open the document':context==='quick'?'Item barcodes open items · document barcodes open transactions':'Find an item by its barcode';
  if(scanKeep){if(title)title.textContent='Scan items to bill';if(sub)sub.textContent='Each scan adds 1 · move the pack away and back to add more';scBillDraw()}
- if(status)status.textContent='Starting camera…';if(manual)manual.value='';if(sound){sound.classList.toggle('active',scannerSound);sound.textContent=scannerSound?'♫':'♪';sound.title='Scan sound '+(scannerSound?'on':'off')}
+ if(status)status.textContent='Starting camera…';if(manual)manual.value='';if(sound){sound.classList.toggle('active',scannerSound);sound.innerHTML=ic(scannerSound?'sound':'mute');sound.title='Scan sound '+(scannerSound?'on':'off')}
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false})}catch(e){scanCallback=null;return warn('Camera permission is needed to scan. You can type the barcode instead.')}
  if(!dlg.isConnected||!stream){stopScan();return warn('Scanner is unavailable')}
  v.srcObject=stream;try{await v.play();dlg.showModal()}catch(e){stopScan();return warn('Could not start the camera. Check camera permission and try again')}try{scanTorchTrack=stream.getVideoTracks()[0]||null;const caps=scanTorchTrack&&scanTorchTrack.getCapabilities?scanTorchTrack.getCapabilities():{};scanTorchSupported=!!(caps&&caps.torch);scannerTorchButtons()}catch(e){scanTorchSupported=false;scannerTorchButtons()}
@@ -653,15 +704,16 @@ async function connectPrinter(){try{
 const thFx=t=>String(t).replace(/₹/g,'Rs ').replace(/−/g,'-').replace(/ · /g,', ');
 const thHead=(o,c,dash)=>{const s=db.shop;return[c(s.name),...(s.addr?[c(s.addr)]:[]),...(shopPh()?[c('Ph '+shopPh())]:[]),...(shopSt()?[c('GSTIN '+s.gstin)]:[]),dash,c(o.title),...o.meta.map(([a,b])=>thFx(a+': '+b).slice(0,W))]};
 const thFoot=(o,c,dash)=>[dash,c(o.meta.some(m=>m[0]=='Customer')?'Thank you! Visit again':'Thank you!')];
-function receipt(b,pay,includeCurrent){const c=t=>' '.repeat(Math.max(0,(W-t.length)>>1))+t,lr=(l,r)=>l.slice(0,W-r.length-1).padEnd(W-r.length)+r,s=db.shop,o=[],dash='-'.repeat(W),
+function receipt(b,pay,includeCurrent){const c=t=>' '.repeat(Math.max(0,(W-t.length)>>1))+t,lr=(l,r)=>l.slice(0,W-r.length-1).padEnd(W-r.length)+r,s=db.shop,o=[],dash='-'.repeat(W),WR=billWarranty(b),
  fm=(l,v)=>/^Discount/.test(l)?'-'+money(-v):l=='Round off'?(v>0?'+':'-')+money(Math.abs(v)):money(v);
  const D=billDoc(b,false);o.push(...thHead(D,c,dash),dash);
- o.push(lr('Qty x Rate','Amount'));b.lines.forEach(l=>{o.push(l.n.slice(0,W));const q=qtxt(l),r=rateTxt(l).replace(/ · /g,', '),am=money(lgross(l)),t='  '+q+' x '+r;if(t.length+am.length<W)o.push(lr(t,am));else{const t2='  x '+r;o.push('  '+q);if(t2.length+am.length<W)o.push(lr(t2,am));else{o.push(t2.slice(0,W));o.push(lr('',am))}}});
+ o.push(lr('Qty x Rate','Amount'));b.lines.forEach(l=>{o.push(wLineName(l,b,WR).slice(0,W));const q=qtxt(l),r=rateTxt(l).replace(/ · /g,', '),am=money(lgross(l)),t='  '+q+' x '+r;if(t.length+am.length<W)o.push(lr(t,am));else{const t2='  x '+r;o.push('  '+q);if(t2.length+am.length<W)o.push(lr(t2,am));else{o.push(t2.slice(0,W));o.push(lr('',am))}}});
  o.push(dash,...BillLayout.totals(b,1).map(([l,v])=>lr(l,fm(l,v))));
  {const rr=retRows(b,0,v=>(v<0?'-':'')+money(Math.abs(v)));if(rr.length)o.push(dash,...rr.map(([l,v])=>lr(l,v)))}
  const st=BillLayout.settle(b);o.push(dash,...st.rows.map(([l,v])=>lr(l,money(v))),...(b.pid?[lr('Due',money(st.due))]:[]));
  const br=BillBalanceDisplay.thermalRows(b);if(br.length)o.push(dash,...(pay&&pay.bal&&!asOnOf(b).recent?[lr('Balances as on',dIN(b.t))]:[]),...br.map(x=>lr(x[0],x[1])));
  if(pay)o.push(...payLines(pay));
+ if(WR.legend.length){o.push(dash);WR.legend.forEach(x=>o.push(...wwrap(x.text,W)));o.push(...wwrap(WR.policy,W))}
  o.push(...thFoot(D,c,dash));
  return o.join('\n')}
 let _pp=null;
@@ -678,14 +730,14 @@ const by=new Uint8Array(seg.reduce((a,x)=>a+x.length,0));let off=0;seg.forEach(x
   for(let i=0;i<by.length;i+=100){const ch=by.slice(i,i+100);pc.properties.writeWithoutResponse?await pc.writeValueWithoutResponse(ch):await pc.writeValue(ch);if(by.length>1500&&i%1000==900)await new Promise(r=>setTimeout(r,30))}}
  catch(e){let x='';by.forEach(v=>x+=String.fromCharCode(v));location.href='rawbt:base64,'+btoa(x)}}
 function docHtml(o,pay){o=prepDoc(o,pay);const s=db.shop,e=esc,a5=s.psize=='A5',cl=o.cols||[],isTax=a=>/^(taxable|cgst|sgst|igst|round off|discount)/i.test(a),balStart=(o.sums||[]).findIndex(r=>/^Balances as on |^Previous balance$/i.test(r[0]));
- let h=`<!doctype html><html><head><meta charset="utf-8"><title>${e(o.title)}</title><style>@page{size:${a5?'A5':'A4'};margin:${a5?8:12}mm}*{box-sizing:border-box}body{margin:0;font:${a5?10.5:12}px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;color:#111}.h{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:5px}.h h1{margin:0;font-size:1.5em}.h small{display:block;color:#444;font-size:.9em}.h .t{font-weight:700;letter-spacing:.08em;font-size:1.25em;text-align:right;white-space:nowrap}.mt{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;margin:7px 0}.mt span{color:#555}.ld{background:#eef3ff;border-radius:6px;padding:6px 10px;font-weight:600;margin:6px 0}table{width:100%;border-collapse:collapse;margin:6px 0}th{background:#eee;text-align:left;font-size:1em}td,th{padding:3px 6px;border-bottom:1px solid #ccc}tr{page-break-inside:avoid}.r{text-align:right}.sm{margin-left:auto;width:58%;page-break-inside:avoid}.sm div{display:flex;justify-content:space-between;padding:2px 0}.sm .tx{font-size:.86em;color:#555;font-weight:400}.sm .due{color:#d93636;font-weight:700}.sm .b{font-size:1.05em;border-top:1.5px solid #111;border-bottom:1.5px solid #111;margin:3px 0;padding:3px 0}.sm .b span:first-child{font-weight:400}.sm .b span:last-child{font-weight:700}.sm .balb{display:block;border-top:1px dotted #666;border-bottom:1px dotted #666;margin-top:5px;padding:4px 0}.sm .balb .dt{font-size:.9em;color:#555}.sm .balb .b{border:0;margin:0;padding:2px 0;font-size:1.05em}.sr{display:flex;gap:10px;align-items:flex-start;margin-top:4px;page-break-inside:avoid}.sr .sm{flex:none}.sr .sm.w{width:48%}.pay{flex:1;min-width:0;border:1.5px dashed #444;border-radius:8px;padding:5px 8px;font-size:.9em;page-break-inside:avoid}.pay p{margin:1px 0}.pay .am{font-size:1.35em}.pay .nt{color:#555;font-size:1em}.r2{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #ccc;margin-top:4px;padding-top:4px}.r2>div:last-child{flex:none;text-align:center;font-size:.85em;color:#555}.f{text-align:center;color:#555;margin-top:10px}.bc{text-align:right;margin:4px 0 0 auto;page-break-inside:avoid}.bc svg{display:block;width:22mm;max-width:100%;height:auto;margin:0 0 0 auto}.bc small{display:block;font-size:.8em;color:#555;margin-top:3px}</style></head><body>`;
+ let h=`<!doctype html><html><head><meta charset="utf-8"><title>${e(o.title)}</title><style>@page{size:${a5?'A5':'A4'};margin:${a5?8:12}mm}*{box-sizing:border-box}body{margin:0;font:${a5?10.5:12}px/1.35 system-ui,"Segoe UI",Roboto,Arial,sans-serif;color:#111}.h{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:5px}.h h1{margin:0;font-size:1.5em}.h small{display:block;color:#444;font-size:.9em}.h .t{font-weight:700;letter-spacing:.08em;font-size:1.25em;text-align:right;white-space:nowrap}.mt{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;margin:7px 0}.mt span{color:#555}.ld{background:#eef3ff;border-radius:6px;padding:6px 10px;font-weight:600;margin:6px 0}table{width:100%;border-collapse:collapse;margin:6px 0}th{background:#eee;text-align:left;font-size:1em}td,th{padding:3px 6px;border-bottom:1px solid #ccc}tr{page-break-inside:avoid}.r{text-align:right}.sm{margin-left:auto;width:58%;page-break-inside:avoid}.sm div{display:flex;justify-content:space-between;padding:2px 0}.sm .tx{font-size:.86em;color:#555;font-weight:400}.sm .due{color:#d93636;font-weight:700}.sm .b{font-size:1.05em;border-top:1.5px solid #111;border-bottom:1.5px solid #111;margin:3px 0;padding:3px 0}.sm .b span:first-child{font-weight:400}.sm .b span:last-child{font-weight:700}.sm .balb{display:block;border-top:1px dotted #666;border-bottom:1px dotted #666;margin-top:5px;padding:4px 0}.sm .balb .dt{font-size:.9em;color:#555}.sm .balb .b{border:0;margin:0;padding:2px 0;font-size:1.05em}.sr{display:flex;gap:10px;align-items:flex-start;margin-top:4px;page-break-inside:avoid}.sr .sm{flex:none}.sr .sm.w{width:48%}.pay{flex:1;min-width:0;border:1.5px dashed #444;border-radius:8px;padding:5px 8px;font-size:.9em;page-break-inside:avoid}.pay p{margin:1px 0}.pay .am{font-size:1.35em}.pay .nt{color:#555;font-size:1em}.r2{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #ccc;margin-top:4px;padding-top:4px}.r2>div:last-child{flex:none;text-align:center;font-size:.85em;color:#555}.f{text-align:center;color:#555;margin-top:10px}.bc{text-align:right;margin:4px 0 0 auto;page-break-inside:avoid}.bc svg{display:block;width:22mm;max-width:100%;height:auto;margin:0 0 0 auto}.bc small{display:block;font-size:.8em;color:#555;margin-top:3px}.wr{margin-top:8px;padding-top:5px;border-top:1px solid #ddd;font-size:.86em;color:#555;page-break-inside:avoid}.wr b{display:block;font-weight:600;color:#444;margin-bottom:2px}.wr .wp{color:#666;font-size:.92em;margin-top:3px}</style></head><body>`;
  h+=`<div class="h"><div><h1>${e(s.name)}</h1>${s.addr?`<small>${e(s.addr)}</small>`:''}${shopPh()?`<small>Phone ${e(shopPh())}</small>`:''}${s.gstin?`<small>GSTIN ${e(s.gstin)}</small>`:''}</div><div class="t">${e(o.title)}${o.barcode?`<div class="bc">${TxEAN13.svg(o.barcode)}</div>`:''}</div></div><div class="mt">${o.meta.map(([a,b])=>`<div><span>${e(a)}:</span> <b>${e(b)}</b></div>`).join('')}</div>${o.lead?`<div class="ld">${e(o.lead)}</div>`:''}`;
  if(cl.length)h+=`<table><thead><tr>${cl.map(c=>`<th class="${c.al=='r'?'r':''}" style="width:${Math.round(c.w*100)}%">${e(c.h)}</th>`).join('')}</tr></thead><tbody>${o.rows.map(r=>`<tr>${r.map((t,i)=>`<td class="${cl[i].al=='r'?'r':''}">${e(t)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
  const pre=balStart>=0?o.sums.slice(0,balStart):o.sums,bal=balStart>=0?o.sums.slice(balStart):[],
   srow=([a,b,bd])=>{const due=!bd&&/due|payable/i.test(a)&&parseFloat(String(b).replace(/[^\d.]/g,''))>.005,c=bd?'b':due?'due':isTax(a)?'tx':/^Balances as on /i.test(a)?'dt':'';return `<div class="${c}"><span>${e(a)}</span><span>${e(b)}</span></div>`};
  const sm=`<div class="sm${pay?' w':''}">${pre.map(srow).join('')}${bal.length?`<div class="balb">${bal.map(srow).join('')}</div>`:''}</div>`;
  let bx='';payBoxes(pay).forEach(pay=>{const hd=payHead(pay);bx+=`<div class="pay"${pay.bal?' style="border-style:solid"':''}><div><p>${hd.t}</p>${hd.noAmt?'':`<p class="am"><b>₹${inrGroup(money(pay.amt))}</b></p>`}${hd.n.length?`<p class="nt">${e(hd.n.join(' '))}</p>`:''}</div>${pay.u||pay.b||pay.qr?`<div class="r2"><div>${pay.u?`<p>UPI ID: <b>${e(pay.id)}</b></p>`:''}${pay.b?`<p>${pay.bank.n?e(pay.bank.n)+' · ':''}${e(pay.bank.h)}</p><p>A/c no: <b>${e(pay.bank.a)}</b> · IFSC: <b>${e(pay.bank.i)}</b></p>`:''}</div>${pay.qr?`<div>${QR.svg(pay.qr,3).replace(/width="\d+" height="\d+"/,'width="56" height="56"')}<div>Scan QR code</div></div>`:''}</div>`:''}</div>`});
- h+=`<div class="sr">${bx}${sm}</div>`;
+ h+=`<div class="sr">${bx}${sm}</div>${o.warranty&&o.warranty.legend.length?`<div class="wr"><b>Warranty</b>${o.warranty.legend.map(x=>`<div>${e(x.text)}</div>`).join('')}<div class="wp">${e(o.warranty.policy)}</div></div>`:''}`;
  return h+`<div class="f">Thank you!</div></body></html>`}
 function printNormal(o,pay){const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';document.body.appendChild(f);const d=f.contentWindow.document;d.open();d.write(docHtml(o,pay));d.close();
  setTimeout(()=>{try{f.contentWindow.focus();f.contentWindow.print()}catch(e){toast('This phone could not open the print screen. Use Share as image instead.')}setTimeout(()=>f.remove(),60000)},400)}
@@ -1089,7 +1141,7 @@ function render(){if(tab!==_rt){tabSy[_rt]=scrollY;itemQ=partyQ=txQ='';_rt=tab;t
 function setStatus(t){stx=t;const e=$('#sx');if(e)e.textContent=t;const s=$('#sst');if(s)s.textContent=t||'Not connected'}
 function sset(k,v){db.shop[k]=v;db.shop.u=Date.now();if(k=='name'){const e=$('.ht b');if(e&&tab=='home')e.textContent=v}save()}
 function edReset(){try{edPend=null;const d=$('#ied');if(d&&d.open)d.close()}catch(e){}}
-function restoreRemoved(){const ob=db.bills.find(x=>x.id==editId);if(!ob)return;ob.lines.forEach(l=>{if(!cart.some(c=>c.id==l.id))cart.push(savedLine(l))});render();toast('Removed items put back')}
+function restoreRemoved(){const ob=db.bills.find(x=>x.id==editId);if(!ob)return;ob.lines.forEach(l=>{if(!cart.some(c=>c.id==l.id))cart.push(savedLine(l,1))});render();toast('Removed items put back')}
 function resetSale(){salePend=null;edReset();rmAck=0;bwh=false;editId='';editEstId='';cart=[];bparty='';brecv='';bpay='full';bdv='';bdt='₹';bsp=blankSp();bdate='';bmode='Cash';isEst=false;estId=''}
 function resetPurch(){edReset();pEditId='';pcart=[];psup='';pno='';ppay='full';precv='';pgst='y';pfr='';pfs='b';pfm='Cash';pfsp=blankSp();pfw='v'}
 function leaveFlow(ok){
@@ -1135,7 +1187,7 @@ function itemView(id,rep,fresh){const i0=db.items.find(x=>x.id==id);if(!i0)retur
  pg(()=>(db.items.find(x=>x.id==id)||i0).name,()=>{const i=db.items.find(x=>x.id==id)||i0,act=[],LR=db.adj.some(a=>a.item==id&&(a.why=='loss'||a.why=='found'))?lossRows():[];
   db.bills.forEach(b=>{if(!b.void)b.lines.forEach(l=>{if(l.id==id)act.push({f:"billView('"+b.id+"')",t:b.t,s:'Sold '+qtxt(l,i0)+' · bill '+b.no,a:lnet(l)})})});db.purch.forEach(p=>{if(!p.void)p.lines.forEach(l=>{if(l.id==id)act.push({f:"pView('"+p.id+"')",t:p.t,s:'Bought '+qtxt(l,i0)+' · '+p.sn+' · '+(p.ng?'No GST':'With GST'),a:l.q*l.r*(1+(l.g||0)/100)})})});db.adj.forEach(a=>{if(a.item==id&&a.q){const la=adjAct(a,i0,LR);if(la){act.push(la);return}const c=a.c!=null?Math.abs(a.q)*a.c*(1+(i0.gst||0)/100):null;act.push({t:a.t,s:(a.why=='opening'?'Opening stock ':'Stock adjusted ')+(a.q>0?'+':'−')+qtxt({q:Math.abs(a.q)},i0),a:c,...(a.why!='opening'&&a.id?{f:"adjUndo('"+a.id+"')",h:'tap to undo'}:{})})}});db.notes.forEach(n=>{if(!n.void)n.lines.forEach(l=>{if(l.id==id)act.push({f:"noteView('"+n.id+"')",t:n.t,s:(n.kind=='d'?'Purchase return ':'Sales return ')+qtxt(l,i0)+' · note '+(n.no||''),a:n.kind=='d'?null:null})})});act.sort((a,b)=>b.t-a.t);
   const fact=(a,b,w)=>`<div${w?' class="w2"':''}><span class="m">${a}</span><b>${b}</b></div>`,sv=itemValue(i,costing());
-  return `${fresh?'<div class="c ok">✔ Item saved</div>':''}${i.hide?'<div class="c">Hidden from lists and search. Past records still use it.</div>':''}<div class="c"><div class="bal ${i.stock<=(i.min??5)?'due':''}" style="font-size:22px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px"><div>${stockTxt(i)}<span> in stock</span></div>${sv>0.004?`<span>Stock value ₹${money(sv)}</span>`:''}</div><div class="facts">${fact('Selling price','₹'+money(i.price)+(+i.pq>1?' · '+esc(i.pu||'Box')+' ₹'+money(i.pp||i.price*i.pq):''),1)}${fact('MRP',+i.mrp>0?'₹'+money(i.mrp):'—')}${fact('GST',+i.gst>0?i.gst+'%':'None')}${fact('HSN',esc(i.hsn||'—'))}${fact('Barcode',esc(i.code||'—'))}</div>${(()=>{if(!i.cost)return '';const bx=i.bi=='box'&&+i.pq>1,mu=bx?i.pq:1,lb='Last cost'+(bx?' / '+esc(i.pu||'box'):' / '+uA(uC(i)));return ownerBox(ownerRows([[lb,'₹'+money(gcost(i)*mu)+(comp()?'':` <span style="font-weight:400">(₹${money(i.cost*mu)} w/o GST)</span>`)]]))})()}</div><div class="sec">Recent activity</div>${act.slice(0,20).map(a=>`<div class="card line ${a.f?'tap':''}" ${a.f?'onclick="'+a.f+'"':''}><div class="gr"><b>${esc(a.s)}</b><span class="m">${dt(a.t)}${a.h?' · '+a.h:''}</span></div><div class="amt">${a.a==null?'':'₹'+money(a.a)}</div></div>`).join('')||'<div class="empty"><span class="m">No transactions yet.</span></div>'}`},
+  return `${fresh?'<div class="c ok">✔ Item saved</div>':''}${i.hide?'<div class="c">Hidden from lists and search. Past records still use it.</div>':''}<div class="c"><div class="bal ${i.stock<=(i.min??5)?'due':''}" style="font-size:22px;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px"><div>${stockTxt(i)}<span> in stock</span></div>${sv>0.004?`<span>Stock value ₹${money(sv)}</span>`:''}</div><div class="facts">${fact('Selling price','₹'+money(i.price)+(+i.pq>1?' · '+esc(i.pu||'Box')+' ₹'+money(i.pp||i.price*i.pq):''),1)}${fact('MRP',+i.mrp>0?'₹'+money(i.mrp):'—')}${fact('GST',+i.gst>0?i.gst+'%':'None')}${fact('HSN',esc(i.hsn||'—'))}${fact('Barcode',esc(i.code||'—'))}${fact('Warranty',i.wv>0?wFmt(i.wv,i.wu):'None')}</div>${(()=>{if(!i.cost)return '';const bx=i.bi=='box'&&+i.pq>1,mu=bx?i.pq:1,lb='Last cost'+(bx?' / '+esc(i.pu||'box'):' / '+uA(uC(i)));return ownerBox(ownerRows([[lb,'₹'+money(gcost(i)*mu)+(comp()?'':` <span style="font-weight:400">(₹${money(i.cost*mu)} w/o GST)</span>`)]]))})()}</div><div class="sec">Recent activity</div>${act.slice(0,20).map(a=>`<div class="card line ${a.f?'tap':''}" ${a.f?'onclick="'+a.f+'"':''}><div class="gr"><b>${esc(a.s)}</b><span class="m">${dt(a.t)}${a.h?' · '+a.h:''}</span></div><div class="amt">${a.a==null?'':'₹'+money(a.a)}</div></div>`).join('')||'<div class="empty"><span class="m">No transactions yet.</span></div>'}`},
   ()=>{const it=db.items.find(x=>x.id==id)||{};return ribbon([['edit','Edit',`itemForm(${id})`,'','e'],['box','Stock','','','',[['box','Add stock (purchase)',`buyItem(${id})`,'','Add stock'],...(+it.stock>0?[['del','Lost / stolen / damaged',`lossForm(${id})`,'','Lost/damaged']]:[])]],it.hide?['undo','Unhide',`hideItem(${id},0)`,'','d']:['del','Delete',`delItem(${id})`,'rd','d']])},rep)}
 
 
@@ -1224,10 +1276,9 @@ const taxLine=o=>['Taxable '+rup(o.tx)+(o.tax>0.004?(o.ig?' · IGST '+rup(o.tax)
    taxLine(o),...(o.mid||[]),
   ['Total'+(o.sfx||''),rup(o.total),'t']],
  /* item table shared by bill and estimate (line discount shown under the item) */
- saleItems=r=>({h:['Item','Qty','Rate','Amount'],rows:r.lines.map(l=>[
-  esc(l.n)+(l.d>0?`<br><span class="m rcv">discount −${rup(l.d)}${dPct(l.d,lgross(l))}</span>`:''),
+saleItems=(r,W)=>({h:['Item','Qty','Rate','Amount'],rows:r.lines.map(l=>[
+  esc(W?wLineName(l,r,W):l.n)+(l.d>0?`<br><span class="m rcv">discount −${rup(l.d)}${dPct(l.d,lgross(l))}</span>`:''),
   qtxt(l),rateTxt(l),money(lgross(l))])});
-
 /* ---- cash tendered & change: ONE calculator for every summary page ----
    A summary only adds  cash:fresh?cashSpec(record,amount):null  to its spec (money coming IN, right after saving); sumView draws it through cashBox().
    One row: label, the cash received, and the result (Return Change, or Short by). */
@@ -1265,10 +1316,11 @@ return k=='t'
   head=`<div class="line sp" style="margin:8px 0"><div><b>${o.type}${o.no?' '+esc(o.no):''}</b><div class="m">${sdt(o.t,o.tm)}${n?' · '+n+' item'+(n==1?'':'s'):''}</div>${o.sub?`<div class="m">${o.sub}</div>`:''}</div>${o.party?`<div class="rt"><span class="m">${o.party[0]}</span><b>${esc(o.party[1])}</b>${o.party[2]?`<span class="m">${esc(o.party[2])}</span>`:''}</div>`:''}</div>`,
   hero=o.hero?`<div class="m">${o.hero[0]}</div><div class="bal ${o.hero[2]||''}">${rup(o.hero[1])}</div>`:'',
   table=n?`<table class="tbl"><tr>${o.items.h.map(h=>`<th>${h}</th>`).join('')}</tr>${o.items.rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table>`:'',
+  wr=o.warranty&&o.warranty.legend.length?`<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);font-size:12px"><div style="font-weight:700;margin-bottom:2px">Warranty</div>${o.warranty.legend.map(x=>`<div>${esc(x.text)}</div>`).join('')}</div>`:'',
   priv=o.priv&&o.priv.rows&&o.priv.rows.length
    ?ownerBox(`${o.priv.title?`<div class="oh">${o.priv.title}</div>`:''}${ownerRows(o.priv.rows)}${o.priv.note?`<div class="m on">${o.priv.note}</div>`:''}`):'';
  return banner
-  +`<div class="c">${shop}${head}${hero}${table}${block(o.tots)}${block(o.ret,1)}${block(o.settle,1)}${o.note?`<div class="m" style="margin-top:6px">${o.note}</div>`:''}${o.act?`<div class="row rowt">${o.act}</div>`:''}</div>`
+  +`<div class="c">${shop}${head}${hero}${table}${block(o.tots)}${block(o.ret,1)}${block(o.settle,1)}${o.note?`<div class="m" style="margin-top:6px">${o.note}</div>`:''}${wr}${o.act?`<div class="row rowt">${o.act}</div>`:''}</div>`
   +cashBox(o.cash,o.type+o.no+o.t)+priv}
 
 /* ---- owner-only panels ---- */
@@ -1317,22 +1369,22 @@ const PS=(doc,coll,id)=>`printSpec(${doc}(db.${coll}.find(x=>x.id=='${id}')))`,
    edit:(b,id)=>b.void?null:`editBill('${id}')`,
    more:(b,id)=>b.void?[]:[['undo','Return items',`retForm('${id}','c')`],['x','Cancel bill',`voidBill('${id}')`,'rd']],
    nw:()=>['newSale()','New sale'],
-   spec(b,fresh){
-    const ro=b.ro||0,tx=b.total-ro-b.tax,due=dueOf(b),
+spec(b,fresh){
+    const WR=billWarranty(b),ro=b.ro||0,tx=b.total-ro-b.tax,due=dueOf(b),
      pay=b.void?null:billPay(b),
      profit=b.void?null:billProfit(b);
     return{
      void:b.void&&'This bill is cancelled',fresh:fresh&&'Bill '+b.no+' '+fresh,
      type:compSch()?'Bill of supply':shopSt()?'Tax invoice':'Bill',no:b.no,t:b.t,tm:1,
      party:['Customer',b.cust||'Walk-in',b.cg||''],
-     items:saleItems(b),
+     items:saleItems(b,WR),
      tots:totRows({disc:billDisc(b),dp:dPctB(b),tx,ig:b.ig,tax:b.tax,ro,total:b.total}),
      ret:retRows(b,0,rupS),
      settle:[...BillLayout.settle(b).rows.map(([l,v])=>[l,rup(v)]),...(b.pid&&due>0.005?[['Due',rup(due),'d']]:[]),...BillBalanceDisplay.rows(b)],
+     warranty:WR.legend.length?WR:null,
      cash:fresh?cashSpec(b,b.paid??b.total):null,
-     act:pay?qrBtn("payQr('b','"+b.id+"')",pay.amt):'',
+act:pay?qrBtn("payQr('b','"+b.id+"')",pay.amt):'',
      priv:profit==null?null:{rows:[profitRow('Profit on this bill',profit,tx)]}}}},
-
   est:{
    coll:'est',nm:'estimate',
    title:e=>'Estimate '+e.no,
@@ -1802,10 +1854,10 @@ function packRate(l){const pq=+l.i.pq,k=l.q/pq,w=k>=1&&Math.abs(k-Math.round(k))
 const billOwnQ=i=>{if(!i)return 0;const ob=editId&&db.bills.find(b=>b.id==editId);if(!ob)return 0;const l=(ob.lines||[]).find(z=>z.id?z.id==i.id:(z.n&&z.n==i.name));return l?+l.q||0:0};
 const billAvailQ=i=>i?(i.stock||0)+billOwnQ(i):0;
 const billStkTxt=i=>i?stockTxt({...i,stock:billAvailQ(i)}):'';
-const cartSum=l=>`<div class="card line tap" onclick="edShow('s',${l.id})"><div class="gr"><b>${esc(l.i.name)}</b><span class="m">${l.q>0?(+l.i.pq>1?packRate(l):fq(l.q)+' '+uQ(uC(l.i),l.q)+' × ₹'+money(l.gross/l.q)):'Enter quantity'}${l.ld>0.004?' · disc ₹'+money(l.ld)+dPct(l.ld,l.gross):''}</span>${issHtml(lineIssues(l))}${lineNote(l)}</div><b class="amt">₹${money(l.amt)}</b>${edBtns('s',l.id,'rmLine')}</div>`;
+const cartSum=l=>{const w=lineW(l);return`<div class="card line tap" onclick="edShow('s',${l.id})"><div class="gr"><b>${esc(l.i.name)}</b><span class="m">${l.q>0?(+l.i.pq>1?packRate(l):fq(l.q)+' '+uQ(uC(l.i),l.q)+' × ₹'+money(l.gross/l.q)):'Enter quantity'}${l.ld>0.004?' · disc ₹'+money(l.ld)+dPct(l.ld,l.gross):''}${w?' · '+esc(wFmt(w.wv,w.wu))+' warranty':''}</span>${issHtml(lineIssues(l))}${lineNote(l)}</div><b class="amt">₹${money(l.amt)}</b>${edBtns('s',l.id,'rmLine')}</div>`};
 const pLbl=l=>{const i=db.items.find(x=>x.id==l.id)||{},pq=+i.pq>1?+i.pq:0,c=uC(l),u=uQ(c,l.q);if(!pq)return fq(l.q)+' '+u+' · ₹'+money(l.r)+'/'+uA(c);const pu=esc(i.pu||'Box'),k=Math.floor(l.q/pq+1e-9),rm=Math.round((l.q-k*pq)*1000)/1000,pk=k&&rm?fq(k)+' '+pu+' + '+fq(rm)+' '+uQ(c,rm):k?fq(k)+' '+pu:fq(rm)+' '+uQ(c,rm);return pk+(k?' ('+fq(l.q)+' '+u+')':'')+' · ₹'+money(l.r)+'/'+((l.ru||1)>1?pu.toLowerCase():uA(c))};
 const pSum=l=>`<div class="card line tap" onclick="edShow('p',${l.id})"><div class="gr"><b>${esc(l.n)}</b><span class="m">${l.q>0?pLbl(l):'Enter quantity'}${l.g?' · GST '+l.g+'%':''}</span></div><b class="amt">₹${money(l.a+l.t)}</b>${edBtns('p',l.id,'prem')}</div>`;
-const csNote=l=>{const i=l.i,av=billAvailQ(i),aft=Math.round((av-l.q)*1000)/1000,gst=+(l.g??i.gst)>0?(l.g??i.gst)+'%':'none',stk=billStkTxt(i);return(editId||l.q>0)?`In stock ${stk} · ${aft<0?`<b class="due">short by ${stkLong({...i,stock:-aft})}</b>`:`${stkLong({...i,stock:aft})} left after this sale`} · GST ${gst}`:`In stock ${stk} · GST ${gst}`};
+const csNote=l=>{const i=l.i,av=billAvailQ(i),aft=Math.round((av-l.q)*1000)/1000,gst=+(l.g??i.gst)>0?(l.g??i.gst)+'%':'none',stk=billStkTxt(i),w=lineW(l),wt=w?` · Warranty ${esc(wFmt(w.wv,w.wu))}`:'';return((editId||l.q>0)?`In stock ${stk} · ${aft<0?`<b class="due">short by ${stkLong({...i,stock:-aft})}</b>`:`${stkLong({...i,stock:aft})} left after this sale`} · GST ${gst}`:`In stock ${stk} · GST ${gst}`)+wt};
 const cartRow=(l,ix,LL)=>{const i=l.i,pq=+i.pq>1?+i.pq:0,pu=esc(i.pu||'Box'),k=pq?Math.floor(l.q/pq+1e-9):0,r=pq?Math.round((l.q-k*pq)*1000)/1000:l.q,P=l.p??i.price,B=l.pp??(i.pp>0?i.pp:i.price*pq),
  stp=(lab,v,id,dn,up)=>`<div class="f"><label>${lab}</label><div class="st"><button onclick="qty(${l.id},${dn})">−</button><input class="qi" id="${id}${l.id}" type="number" step="any" inputmode="decimal" value="${v}" oninput="livePcs(${l.id})" onchange="setPcs(${l.id})"><button onclick="qty(${l.id},${up})">+</button></div></div>`,
  ri=(lab,v,k2)=>`<div class="f"><label>${lab}</label><input type="number" step="any" inputmode="decimal" value="${v}" oninput="setRt(${l.id},'${k2}',this.value)"></div>`;
@@ -1934,9 +1986,14 @@ function finish(p,lim){const ls=cart.map(line).filter(Boolean);if(!ls.length)ret
  if(!isEst&&!db.shop.neg){for(const l of ls){const o=billOwnQ(l.i),mx=Math.max(0,Math.round((l.i.stock+o)*1000)/1000);if(l.q>mx+1e-9)return warn(`Only ${stkLong({...l.i,stock:mx})} of ${l.i.name} available`)}}
  if(editId&&!rmAck){const ob=db.bills.find(x=>x.id==editId),gone=ob?ob.lines.filter(l=>!cart.some(c=>c.id==l.id)):[];if(gone.length){sheet('This update removes '+gone.slice(0,3).map(l=>l.n).join(', ')+(gone.length>3?' and '+(gone.length-3)+' more':'')+' from the bill. Their stock goes back and the total changes.',[['bag','Update bill anyway','rmAck=1;finish(false)'],['x','Put the removed items back','restoreRemoved()']]);return}}
  {const bl=ls.find(l=>lineIssues(l).length);if(bl)return warn(bl.i.name+': '+issText(lineIssues(bl)[0]));const bm=billIssue(ls);if(bm)return warn(issText(bm))}
+const o0=editId&&db.bills.find(x=>x.id==editId),bt=tOn(bdate||today(),o0&&o0.t);
  const mk=()=>({wh:bwh?1:0,cust:pt?pt.name:'',pid:pt?pt.id:0,cg:(pt&&gstinOk(pt.gstin)&&pt.gstin)||'',pos:posOf(pt),ig:isIG(pt),total:T.t,tax:T.tax,ro:T.ro,sub:r2(T.sub),bd:r2(T.bd),bdv:String(bdv??'').trim(),bdt:bdt=='%'?'%':'₹',
-  lines:ls.map((l,i)=>({id:l.i.id,n:l.i.name,q:l.q,p:l.p??l.i.price,pp:(+l.i.pq>1&&(l.pp??l.i.pp)>0)?(l.pp??l.i.pp):undefined,ga:l.gross,pq:+l.i.pq>1?+l.i.pq:undefined,pu:+l.i.pq>1?(l.i.pu||'Pack'):undefined,g:comp()?0:(l.g??l.i.gst),h:l.h??l.i.hsn??'',un:l.un??l.i.unit??'PCS',d:l.ld,dv:l.dv||0,dt:l.dt||'₹',nt:r2(T.nets[i])}))});
- if(isEst){if(editEstId){const o=db.est.find(x=>x.id==editEstId);if(o){Object.assign(o,{t:tOn(bdate||today(),o.t),u:Date.now(),...mk()});save();resetSale();flowLand();estView(o.id,0,0);toast('Estimate '+o.no+' updated');return}}const e={id:uid(),no:nextEstNo(),t:tOn(bdate||today()),u:Date.now(),status:'open',...mk()};db.est.unshift(e);save();resetSale();flowLand();toast('Estimate '+e.no+' saved');estView(e.id,0,1);return}
+  lines:ls.map((l,i)=>{
+   const wv=l.wv!==undefined?(+l.wv||0):(+l.i.wv||0),wu=wv>0?(l.wu||l.i.wu||'m'):undefined,
+    we=wv>0&&!isEst?((editId&&o0&&dayStr(bt)===dayStr(o0.t)&&l.we)?l.we:wExpDate(bt,wv,wu)):undefined;
+   return{id:l.i.id,n:l.i.name,q:l.q,p:l.p??l.i.price,pp:(+l.i.pq>1&&(l.pp??l.i.pp)>0)?(l.pp??l.i.pp):undefined,ga:l.gross,pq:+l.i.pq>1?+l.i.pq:undefined,pu:+l.i.pq>1?(l.i.pu||'Pack'):undefined,g:comp()?0:(l.g??l.i.gst),h:l.h??l.i.hsn??'',un:l.un??l.i.unit??'PCS',d:l.ld,dv:l.dv||0,dt:l.dt||'₹',nt:r2(T.nets[i]),...(wv>0?{wv,wu,...(we?{we}:{})}:{})}
+  })}); 
+  if(isEst){if(editEstId){const o=db.est.find(x=>x.id==editEstId);if(o){Object.assign(o,{t:tOn(bdate||today(),o.t),u:Date.now(),...mk()});save();resetSale();flowLand();estView(o.id,0,0);toast('Estimate '+o.no+' updated');return}}const e={id:uid(),no:nextEstNo(),t:tOn(bdate||today()),u:Date.now(),status:'open',...mk()};db.est.unshift(e);save();resetSale();flowLand();toast('Estimate '+e.no+' saved');estView(e.id,0,1);return}
  const split=bmode=='Split'&&bpay!='credit',sv=PM.map(m=>({m,a:r2(+bsp[m]||0)})).filter(x=>x.a>0),ssum=sv.reduce((s,x)=>s+x.a,0);
  if(split&&ssum>T.t+0.005)return warn('The amounts you entered are more than the bill total');
  if(split&&bpay=='part'&&!(ssum>0))return warn('Enter the amounts received');if(split&&bpay=='full'&&ssum<T.t-0.005)return warn('Split amounts must add up to the bill total');
@@ -1948,15 +2005,15 @@ function finish(p,lim){const ls=cart.map(line).filter(Boolean);if(!ls.length)ret
   if(msg){if(db.shop.limitMode=='block')return sheet(msg,[]);
    return sheet(msg,[['bag','Save the bill anyway',`finish(${p?1:0},${(lim||0)|1})`]])}}
 
- const o0=editId&&db.bills.find(x=>x.id==editId),b={id:o0?o0.id:uid(),no:o0?o0.no:nextNo(),t:tOn(bdate||today(),o0&&o0.t),u:Date.now(),paid,mode:bpay=='credit'?'':bmode,pm:split?sv:undefined,...mk()};
+ const b={id:o0?o0.id:uid(),no:o0?o0.no:nextNo(),t:bt,u:Date.now(),paid,mode:bpay=='credit'?'':bmode,pm:split?sv:undefined,...mk()};
  if(o0){remAdv('pays',o0,'Advance with bill ');Object.assign(o0,b)}else{db.bills.unshift(b);const nk=+String(b.no).slice(DEV.length);if(nk){db.nlast=db.nlast||{};db.nlast[DEV]=Math.max(nk,db.nlast[DEV]||0)}}
  if(extra>0)db.pays.unshift({id:uid(),no:nextRNo(),pid:pt.id,amt:extra,mode:bmode==='Split'?'Cash':bmode,t:b.t,adv:1,bill:b.id,note:'Advance with bill '+b.no});
  if(estId){const e=db.est.find(x=>x.id==estId);if(e){e.status='converted';e.bill=(o0||b).no;e.u=Date.now()}}
  const fin=o0||b;resetSale();recalc();save();flowLand();toast('Bill '+fin.no+(o0?' updated':' saved')+(extra>0?' · advance ₹'+money(extra)+' kept':''));billView(fin.id,0,o0?'updated':'saved');if(p)printBill(fin,1)}
 /* a cart line rebuilt from a saved bill / estimate line; c.o keeps what was saved so Revert and Cancel can go back to it */
-const savedLine=l=>{const it=db.items.find(x=>x.id==l.id),c={id:l.id||(db.items.find(i=>i.name==l.n)||{}).id||uid(),q:l.q,g:l.g,n:l.n,h:l.h,un:l.un,dv:l.dv,dt:l.dt};if(!it||l.p!=it.price)c.p=l.p;if(l.pp>0&&(!it||l.pp!=it.pp))c.pp=l.pp;c.o={q:l.q,p:c.p,pp:c.pp,dv:l.dv,dt:l.dt};return c};
+const savedLine=(l,lockW)=>{const it=db.items.find(x=>x.id==l.id),c={id:l.id||(db.items.find(i=>i.name==l.n)||{}).id||uid(),q:l.q,g:l.g,n:l.n,h:l.h,un:l.un,dv:l.dv,dt:l.dt};if(!it||l.p!=it.price)c.p=l.p;if(l.pp>0&&(!it||l.pp!=it.pp))c.pp=l.pp;if(lockW){c.wv=+l.wv||0;if(c.wv>0){c.wu=l.wu||'m';if(l.we)c.we=l.we}}else if(+l.wv>0){c.wv=+l.wv;c.wu=l.wu||'m';if(l.we)c.we=l.we}c.o={q:l.q,p:c.p,pp:c.pp,dv:l.dv,dt:l.dt};return c};
 async function editBill(id,skip){const b=db.bills.find(x=>x.id==id);if(!b||b.void)return;flowFrom(null,1);if(db.notes.some(n=>!n.void&&n.ref==id))return warn('This bill has a return. Cancel the credit note first, then edit the bill.');if(cart.length&&!skip&&!(await uiConfirm('Replace the current cart with this bill for editing?','Replace')))return;
- resetSale();editId=id;cart=b.lines.map(savedLine);bparty=b.pid||'';bwh=!!b.wh;bdv=b.bdv!==undefined?String(b.bdv):(b.bd?String(b.bd):'');bdt=b.bdt=='%'?'%':'₹';
+ resetSale();editId=id;cart=b.lines.map(l=>savedLine(l,1));bparty=b.pid||'';bwh=!!b.wh;bdv=b.bdv!==undefined?String(b.bdv):(b.bd?String(b.bd):'');bdt=b.bdt=='%'?'%':'₹';
  bpay=dueOf(b)>0.005?(b.paid>0?'part':'credit'):'full';bdate=dayStr(b.t);if(b.pm){bmode='Split';bsp=blankSp();b.pm.forEach(x=>bsp[x.m]=String(x.a))}else{bmode=b.mode||'Cash';brecv=bpay!='full'?String(b.paid):''}{const ad=advSum('pays',b,'Advance with bill ');if(ad>0){bpay='part';brecv=String(Math.round((b.paid+ad)*100)/100)}}
  closeAll();tab='bill';render()}
 function convertEst(id){const e=db.est.find(x=>x.id==id);if(!e||e.void||e.status=='converted')return;flowFrom();closeAll();resetSale();
@@ -2079,6 +2136,7 @@ function itemForm(id,code,nm,pm){saleAddFlag=false;const i=db.items.find(x=>x.id
  <div class="g3c${pq?'':' s'}"><div class="f"><label>${esc(PL.wm)}</label><input id="w1" type="number" step="any" inputmode="decimal" value="${wmg}" placeholder="e.g. 8" oninput="itCalc('wm')"></div><div class="f"><label>${esc(PL.wp)}</label><input id="w2" type="number" inputmode="decimal" value="${i.wp||''}" placeholder="Incl. GST" oninput="itCalc('wp')"></div><div class="f"><label>Round up ₹</label><input id="fc3" type="number" step="any" inputmode="decimal" value="${i.cwp||''}" placeholder="e.g. 5" oninput="itCalc('cw')"></div></div><div class="prl" id="pr3">${itPrHtml(+i.wp||0,rc0,g0)}</div>
  <div id="wbx" style="display:${pq?'block':'none'}"><div class="g3c"><div class="f"><label>${PL.wbm}</label><input id="w3" type="number" step="any" inputmode="decimal" value="${wbm}" placeholder="e.g. 5" oninput="itCalc('wbm')"></div><div class="f"><label>${esc(PL.wbp)}</label><input id="w4" type="number" inputmode="decimal" value="${i.wpp||''}" placeholder="Incl. GST" oninput="itCalc('wbp')"></div><div class="f"><label>Round up ₹</label><input id="fc4" type="number" step="any" inputmode="decimal" value="${i.cwb||''}" placeholder="e.g. 5" oninput="itCalc('cwb')"></div></div><div class="prl" id="pr4">${pq?itPrHtml(+i.wpp||0,rc0*pq,g0):''}</div></div><div class="m" id="wsv" style="margin:-4px 0 6px"></div></details>
  <div class="mst${pq?' p':''}" id="mst">${fld('MRP (₹, optional)',`<input id="f3" type="number" inputmode="decimal" value="${+i.mrp>0&&!i.ma?i.mrp:''}" placeholder="Same as selling price">`)}<div class="f" id="kbw" style="display:${pq?'block':'none'}"><label id="kbl">${plr(esc(i.pu||'Box'))}</label><div class="st"><button type="button" onclick="stepIn('f19',-1)">−</button><input id="f19" type="number" inputmode="numeric" value="${pm||!pq?'':(sb0||'')}" placeholder="0"><button type="button" onclick="stepIn('f19',1)">+</button></div></div><div class="f"><label id="pcl2" data-qb="${qb}">${pq?uT(uC(i)):qb}</label><div class="st"><button type="button" onclick="stepIn('f6',-1)">−</button><input id="f6" type="number" step="any" inputmode="decimal" value="${pm?'':(sr0||'')}" placeholder="0"><button type="button" onclick="stepIn('f6',1)">+</button></div></div>${id&&!pm?`<div class="m" style="grid-column:1/-1;font-size:11px">Stock on hand now: <b>${stockTxt(i)}</b>. Correcting the opening stock changes it by the same amount. After that, stock moves only through purchases, sales and Lost / stolen / damaged.</div>`:''}</div>
+ ${ifld('Warranty',`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><input id="f20" type="number" inputmode="numeric" min="0" value="${i.wv||''}" placeholder="0" oninput="$('#f21').style.opacity=this.value>0?1:.6" style="flex:none;width:68px;text-align:center"><div class="seg" id="f21" style="flex:1;min-width:190px;opacity:${i.wv>0?1:.6}">${[['d','Days'],['w','Weeks'],['m','Months'],['y','Years']].map(([k,l])=>`<button type="button" data-v="${k}" class="${(i.wu||'m')==k?'on':''}" onclick="segSet(this)">${l}</button>`).join('')}</div></div>`,'Optional. Max 25 years. Locked onto bills at the time of sale.')}
  <details class="more"><summary>More options</summary><div class="g2">${fld('HSN code',`<input id="f8" inputmode="numeric" value="${esc(i.hsn||'')}" placeholder="4 to 8 digits">`)}${fld('Low-stock alert at',`<input id="f10" type="number" inputmode="numeric" value="${i.min??5}">`)}</div>${id&&!pm?'':`<div class="g2">${fld('Batch no.','<input id="f12">')}${fld('Expiry date','<input id="f13" type="date">')}</div>`}${id?`<button class="btn r" style="width:100%" onclick="delItem(${id})">Delete item</button>`:''}</details></div>`,
  ()=>`<button class="btn" onclick="saveItem(${id||0},${pm?1:0})">${id?'Save changes':pm?'Add to purchase':'Save item'}</button>`);mgSegs()}
 async function saveItem(id,pm){const g=k=>(($(k)||{}).value||'').toString().trim(),n=g('#f1');if(!n)return bad('#f1','Enter the item name');
@@ -2088,6 +2146,7 @@ async function saveItem(id,pm){const g=k=>(($(k)||{}).value||'').toString().trim
  const pq=+g('#f15')>1?Math.round(+g('#f15')):0;if(g('#f15')!==''&&!pq)return bad('#f15','Enter 2 or more per pack');
  if(!pq&&$('#pkm')&&$('#pkm').children[1].classList.contains('on'))return bad('#f15','Enter how many are in one pack, or choose Single item');
  for(const k of ['#fc1','#fc2','#fc3','#fc4']){const cv=g(k);if(cv!==''&&!(+cv>0))return bad(k,'Enter a number above 0, or leave it empty')}
+ const wraw=g('#f20'),wv=wraw===''?0:+wraw,wu=(($('#f21 .on')||{}).dataset||{}).v||'m';if(wraw!==''&&(!Number.isFinite(wv)||wv<0||!Number.isInteger(wv)))return bad('#f20','Enter a whole number of 0 or more');if(wv>({d:9131,w:1304,m:300,y:25}[wu]||300))return bad('#f20','Max warranty period is 25 years');
  const pu=puName(),useBox=pq&&qusBox(),mul=useBox?pq:1;
  if(pm&&!((+g('#f19')||0)*(pq||0)+(+g('#f6')||0)>0))return bad(pq?'#f19':'#f6','Enter the quantity bought');if((pm||!id)&&g('#f11')==='')return bad('#f11','Enter the purchase price');
  const noGstP=!!(pm&&pgst=='n'),lockC=!pm&&costLocked(id),ex=id&&db.items.find(x=>x.id==id),ci=+g('#f11'),cost=g('#f11')===''?undefined:+(ci/mul/(comp()||noGstP?1:1+(+g('#f5'))/100)).toFixed(8),o={name:n,code,mrp:mrp>0?mrp:price,ma:mrp>0?0:1,price:price||mrp,gst:+g('#f5'),hsn:hs,unit:g('#f9')||'PCS',mgb:1,min:g('#f10')===''?5:+g('#f10'),u:Date.now()};
@@ -2121,6 +2180,7 @@ if(ci>0){
  if(!pm&&id&&ex&&Math.abs(qty0-op0)>1e-9){const lo=Math.round((op0-(+ex.stock||0))*1000)/1000,sv=v=>stockTxt({...ex,pq:pq||0,pu:pu||ex.pu,stock:v});if(qty0<lo-1e-9&&!db.shop.neg)return bad(pq?'#f19':'#f6','Opening stock cannot be below '+sv(lo)+'. More than that has already been sold or lost');
   if(!(await uiConfirm('Change opening stock of '+ex.name+' from '+sv(op0)+' to '+sv(qty0)+'? Stock on hand will go from '+sv(+ex.stock||0)+' to '+sv((+ex.stock||0)+qty0-op0)+'. The opening entry in the item\'s activity will be updated.','Change opening stock')))return}
   let it=db.items.find(x=>x.id==id);const oc0=it?+it.cost||0:0;if(it)Object.assign(it,o);else{it={id:nid(),stock:0,...o};db.items.push(it)}
+ if(wv>0){it.wv=wv;it.wu=['d','w','m','y'].includes(wu)?wu:'m'}else{delete it.wv;delete it.wu}
  if(pq){it.pq=pq;it.pu=pu;if(useBox)it.bi='box';else delete it.bi;const pp=+g('#f16');if(pp>0)it.pp=pp;else delete it.pp}else{delete it.pq;delete it.pu;delete it.pp;delete it.bi}
  
  const gstSav=+g('#f5')||0,gmSav=1+gstSav/100;
