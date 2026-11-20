@@ -119,7 +119,7 @@ nav{position:fixed;left:auto;right:14px;bottom:calc(14px + env(safe-area-inset-b
 .tt.clickable{cursor:pointer;text-decoration:underline dotted rgba(31,91,224,.4);text-underline-offset:3px}
 .tt.clickable:active{opacity:.75}
 .btot-inp{width:115px;max-width:34vw;min-height:30px;padding:2px 8px;font-size:18px;font-weight:700;color:var(--g);background:#f3f7ff;border:2px solid var(--g);border-radius:8px}
-.rst-btot{background:var(--g2);color:var(--g);border-radius:6px;padding:3px 8px;min-height:0;font-size:12px;font-weight:700;line-height:1.2;flex:none;white-space:nowrap}.rst-btot[hidden]{display:none}
+.rst-btot{background:var(--g2);color:var(--g);border-radius:6px;padding:3px 8px;min-height:0;font-size:12px;font-weight:700;line-height:1.2;flex:none;white-space:nowrap}.rst-btot[hidden]{display:none}.rst-rt.red{background:rgba(217,54,54,.12);color:var(--red)}
 .ir:has(>.ctl>.m:not(:empty)){align-items:flex-start}.ir:has(>.ctl>.m:not(:empty))>label{min-height:34px;display:flex;align-items:center}
 </style></head><body><header id="hd"></header><main id="app"></main>
 <nav id="nav"></nav>
@@ -156,7 +156,7 @@ const ddRows=(L,fn,rt,q)=>L.map(i=>{const sq=fn=='add'&&editId?billAvailQ(i):i.s
 document.addEventListener('click',e=>{if(e.target.isConnected&&!e.target.closest('.ddw'))document.querySelectorAll('.dd').forEach(d=>d.innerHTML='')});
 function payBlock(k,tot,hasP,pay,recv,mode,sp){const n=PN[k],credit=pay=='credit',split=mode=='Split'&&!credit,adv=k=='s'?'adv1':'adv2',s=PM.reduce((a,m)=>a+(+sp[m]||0),0);
  return `<div class="sec">Payment</div><div class="seg">${[['full','Paid in full'],['part','Part paid'],['credit','On credit']].map(([v,l])=>`<button class="${pay==v?'on':''}" onclick="${n.y}='${v}';${n.r}='${v=='credit'?'0':''}';render()">${l}</button>`).join('')}</div>${pay=='part'&&!split?fld(k=='s'?'Amount received (₹)':'Amount paid (₹)',`<input type="number" inputmode="decimal" class="big" value="${recv}" oninput="${n.r}=this.value;advRef('${k}')" placeholder="0">`,'<span id="'+adv+'">'+(+recv>tot+0.005?'₹'+money(+recv-tot)+' extra will be kept as advance':'')+'</span>'):''}${pay!='full'&&!hasP?`<p class="m due">Choose a ${k=='s'?'customer':'supplier'} above to record the unpaid amount.</p>`:''}${credit?'':`<div class="sec">Paid by</div><div class="seg">${[...PM,'Split'].map(m=>`<button class="${m==mode?'on':''}" onclick="${n.m}='${m}';render()">${m}</button>`).join('')}</div>`}${split?`<div class="g2" style="margin-top:6px">${PM.map(m=>fld(m+' (₹)',`<input type="number" inputmode="decimal" value="${sp[m]||''}" placeholder="0" oninput="${n.x}['${m}']=this.value;splitUpd('${k}')">`)).join('')}</div><div class="m" id="splt${k}">${splTxt(s,tot)}</div>`:''}`}
-function splitUpd(k){const t=k=='s'?totals(shown().map(line).filter(Boolean)).t:pcalc().tot,sp=k=='s'?bsp:psp,e=$('#splt'+k);if(e)e.textContent=splTxt(PM.reduce((a,m)=>a+(+sp[m]||0),0),t)}
+function splitUpd(k){const t=k=='s'?totals(shownLines()).t:pcalc().tot,sp=k=='s'?bsp:psp,e=$('#splt'+k);if(e)e.textContent=splTxt(PM.reduce((a,m)=>a+(+sp[m]||0),0),t)}
 /* ---------- bill ---------- */
 const lnet=l=>l.nt??l.q*l.p,billDisc=b=>(b.lines||[]).reduce((s,l)=>s+(l.d||0),0)+(b.bd||0),
  dPct=(d,g)=>d>0.004&&g>0.004?' ('+ +(d/g*100).toFixed(2)+'%)':'',dPctB=b=>dPct(billDisc(b),(b.lines||[]).reduce((s,l)=>s+lgross(l),0));
@@ -168,8 +168,8 @@ function discountEngine(sourceLines,billValue=bdv,billType=bdt){
  const lines=(Array.isArray(sourceLines)?sourceLines:[]).map(l=>{const i0=db.items.find(x=>x.id==l.id)||(l.n&&db.items.find(x=>x.name==l.n))||(l.n?{id:l.id,name:l.n,price:l.p,gst:l.g,stock:0}:null);if(!i0)return null;const i=tierItem(i0),gross=discountRound(packAmt(i,l.q,l.p,l.pp)),ld=discountAmount(gross,l.dv,l.dt);return{...l,i,gross,ld,amt:discountRound(Math.max(0,gross-ld))}}).filter(Boolean);
  const sub=lines.reduce((a,l)=>a+l.amt,0),type=billType=='%'?'%':'₹',bd=discountAmount(sub,billValue,type),nets=lines.map(l=>sub>0?discountRound(l.amt-bd*l.amt/sub):0);
  let net=0,tax=0;nets.forEach((n,k)=>{const g=comp()?0:(lines[k].g??lines[k].i.gst);net+=n;tax+=n*g/(100+g)});
- let allowedFraction=1,limitingProduct='',checkedCosts=0;const marginMultiplier=1/mk(mpP());
- lines.forEach(l=>{const need=costNeed(l);if(!(need>0))return;checkedCosts++;const fraction=l.amt>0?Math.max(0,Math.min(1,1-need*marginMultiplier/l.amt)):0;if(fraction<allowedFraction-1e-10){allowedFraction=fraction;limitingProduct=l.i.name}});
+ let allowedFraction=1,limitingProduct='',checkedCosts=0;const marginMultiplier=1/mgM();
+ lines.forEach(l=>{const ps=marginParts(l);if(!ps.length)return;checkedCosts++;const f=l.gross>0?l.amt/l.gross:0;ps.forEach(t=>{const a=t.g*f,fraction=a>0?Math.max(0,Math.min(1,1-t.need*marginMultiplier/a)):0;if(fraction<allowedFraction-1e-10){allowedFraction=fraction;limitingProduct=l.i.name}})});
  const maxBillDiscount=checkedCosts?Math.floor((sub*allowedFraction+1e-9)*100)/100:sub,t=Math.round(net);
  return{lines,t,tax,base:net-tax,ro:t-net,sub,bd,nets,allowedFraction,maxBillDiscount,limitingProduct,marginExceeded:bd>maxBillDiscount+0.02};
 }
@@ -197,7 +197,7 @@ let HELD=[];try{HELD=JSON.parse(localStorage.getItem('shopbill_held')||'[]')}cat
 function heldSave(){try{localStorage.setItem('shopbill_held',JSON.stringify(HELD))}catch(e){}}
 function heldOf(){return HELD.filter(h=>h.est==isEst)}
 function canHold(){return!editId&&!editEstId&&shown().length>0}
-function heldSnap(){const ls=shown().map(line).filter(Boolean),pt=db.parties.find(x=>x.id==bparty);
+function heldSnap(){const ls=shownLines(),pt=db.parties.find(x=>x.id==bparty);
  return{id:uid(),t:Date.now(),est:isEst,n:ls.length,tot:totals(ls).t,cust:pt?pt.name:'',nm:ls.slice(0,2).map(l=>l.i.name).join(', ')+(ls.length>2?' +'+(ls.length-2)+' more':''),s:JSON.parse(JSON.stringify({cart:shown(),bparty,brecv,bmode,bpay,bdv,bdt,bsp,bdate,bwh,estId}))}}
 function holdCart(){if(!canHold())return warn('Add items first');const e=isEst;HELD.unshift(heldSnap());heldSave();resetSale();isEst=e;render();toast((e?'Estimate':'Bill')+' held · ready for the next customer')}
 function holdRecall(id){const k=HELD.findIndex(x=>x.id==id);if(k<0)return;const h=HELD.splice(k,1)[0];if(canHold())HELD.unshift(heldSnap());
@@ -508,7 +508,7 @@ async function remind(id,via){const p=db.parties.find(x=>x.id==id);if(!p||!(p.ba
 
 function resetAll(){pg('Reset data',()=>{const m=segVal('rmod')||'Data only';return `<div class="c bad">This permanently deletes data on this phone${sc.repo?' and, through sync, on your other phones and the saved copy':''}. Download a backup first if you may need it.</div>${fld('What to erase',SEG('rmod',['Data only','Everything'],'Data only'),'Data only keeps shop details, tax scheme, messages, print and share options and your sync connection. Everything also resets those.')}${fld('Enter the PIN to continue',`<input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">`)}`},()=>`<button class="btn r" onclick="resetGo()">Erase now</button>`)}
 function resetGo(){if(($('#pin').value||'')!==(db.shop.pin||'4787'))return bad('#pin','Wrong PIN');snapClear();const all=segVal('rmod')=='Everything',o=db;db={items:[],bills:[],shop:all?{name:'My Shop',addr:'',gstin:''}:o.shop,seq:1,parties:[],pays:[],adj:[],tomb:{},sups:[],purch:[],spays:[],exp:[],notes:[],est:[],mig2:o.mig2,mig3:o.mig3,lastBackup:o.lastBackup,rst:Date.now()};cart=[];pcart=[];HELD=[];heldSave();tab='home';rpt='';navStack.length=0;closeAll();save();render();toast(all?'Everything erased':'Data erased, settings kept')}
-const toB=u=>{let s='';const a=new Uint8Array(u);for(let i=0;i<a.length;i+=32768)s+=String.fromCharCode.apply(null,a.subarray(i,i+32768));return btoa(s)},fromB=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
+const fromB=b=>Uint8Array.from(atob(b),c=>c.charCodeAt(0));
 async function bkKey(pw,salt){const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
 async function bkDec(env,pw){const key=await bkKey(pw,fromB(env.s)),p=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB(env.i)},key,fromB(env.d));return new TextDecoder().decode(p)}
 const bkName=()=>'sb-'+new Date().toISOString().slice(0,10)+'.json';
@@ -551,7 +551,7 @@ function scBillAdd(c){const i=db.items.find(x=>x.code==c);
 function scQty(id,d){const l=cart.find(x=>x.id==id);if(!l||(d<-1&&l.q+d<-1e-9))return;l.q=Math.round((l.q+d)*1000)/1000;if(!(l.q>0))cart=cart.filter(x=>x.id!=id);scanLastId=id;render();scBillDraw()}
 function scAddStock(){const id=scOut;scOut=0;stopScan();stockFirst(id)}
 function scAddUnknown(){const c=scUnk;stopScan();itemForm(0,c);saleAddFlag=true}
-function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cart.map(line).filter(Boolean),T=totals(ls),first=scanLastId,ord=[...ls].reverse().sort((a,b)=>(b.id==first)-(a.id==first)),u=$('#scUnk');
+function scBillDraw(){const p=$('#scl');if(!p)return;const ls=cartLines(),T=totals(ls),first=scanLastId,ord=[...ls].reverse().sort((a,b)=>(b.id==first)-(a.id==first)),u=$('#scUnk');
  if(u)u.innerHTML=scUnk?`<div class="scu"><span>Unknown code <b>${esc(scUnk)}</b></span><button onclick="scAddUnknown()">Add item</button><button class="x" onclick="scUnk='';scBillDraw()" aria-label="Dismiss">✕</button></div>`:scOut?`<div class="scu"><span><b>${esc((db.items.find(x=>x.id==scOut)||{}).name||'Item')}</b> is out of stock</span><button onclick="scAddStock()">Add stock</button><button class="x" onclick="scOut=0;scBillDraw()" aria-label="Dismiss">✕</button></div>`:'';
  p.innerHTML=ord.map(l=>{const i=l.i,m=lineIssues(l)[0],pq=+i.pq>1?+i.pq:0,
   st=(v,u,dn,up,off)=>`<div class="stp"><button onclick="scQty(${l.id},${dn})" aria-label="Less" ${off?'disabled':''}>−</button><span class="q"><b>${v}</b> <small>${u}</small></span><button onclick="scQty(${l.id},${up})" aria-label="More">+</button></div>`,
@@ -1072,7 +1072,6 @@ const qrCaption=q=>{
 function qrShow(a,ref,test,kind,pid){const hu=upiOk(db.shop.upi),hb=bankOk();if(!hu&&!hb)return sheet('Add your UPI ID or bank details in Settings first.',[['gear','Open settings','openSettings()']]);const c=qrCardCanvas(a,ref,0,kind);if(!c)return toast('Could not make the QR code');_qr={c,a,ref,test,kind,pid};if($('#sheet').open)$('#sheet').close();$('#sheet').classList.add('qrdim');qrDraw();$('#sheet').showModal()}
 function qrMenu(k){const q=_qr;if(!q)return;q.menu=q.menu==k?'':k;qrDraw()}
 function qrAct(f){if(_qr)_qr.menu='';qrDraw();f()}
-function qrPrint(){qrMenu('print')}
 /* the QR popup: two icons (share, print) open a small menu on top of it; the QR itself is never replaced, so it stays up until Close */
 function qrDraw(){const q=_qr;if(!q)return;const hu=upiOk(db.shop.upi),hb=bankOk(),s=db.shop,hasAmount=q.a!==null&&q.a>0.005,H=qrHead(q.a,hu),title=q.test?'Test QR':H.top+(H.amt?' '+H.amt:H.sub?' · '+H.sub:''),G=hu?QR.make(upiLink(q.a,q.ref)):null,
  ib=(i,l,f,on)=>`<button type="button" class="ib${on?' p':''}" aria-label="${l}" title="${l}" onclick="${f}">${ic(i)}</button>`,
@@ -1338,7 +1337,7 @@ return k=='t'
 /* estimate: what it would earn (today's average cost) and how far the price can come down.
    Discount headroom uses the same minimum-margin rule as the bill discount check. */
 function estPriv(e){
- const C=costing(),missing=[],mu=1/mk(mpP()),tx=e.total-(e.ro||0)-e.tax;
+ const C=costing(),missing=[],mu=1/mgM(),tx=e.total-(e.ro||0)-e.tax;
  let cost=0,sub=0,allowed=1,checked=0;
  e.lines.forEach(l=>{
   const i=db.items.find(x=>x.id==l.id),z=C.S[l.id],
@@ -1794,7 +1793,9 @@ function qtxtP(l,i){const t=qtxt(l,i),pq=+(l.pq||(i&&i.pq))||0;return pq>1&&l.q>
 function qtxt(l,i){const pq=+(l.pq||(i&&i.pq))||0,pu=l.pu||(i&&i.pu)||'Pack';if(pq>1){const k=Math.floor(l.q/pq+1e-9),r=Math.round((l.q-k*pq)*1000)/1000;const c=uC(l.un?l:i);return k&&r?`${k} ${pu} + ${fq(r)} ${uQ(c,r)}`:k?`${k} ${pu}`:`${fq(r)} ${uQ(c,r)}`}return fq(l.q)+uSuf(l.un?l:i,l.q)}
 function stkLong(i){const pq=+i.pq||0,st=+i.stock||0;if(!(pq>1)||st<=0)return fq(st)+(pq>1?' '+uP(uC(i)):uSuf(i,st));const k=Math.floor(st/pq+1e-9),r=Math.round((st-k*pq)*1000)/1000,u=String(i.pu||'Pack').toLowerCase(),o=[];if(k)o.push(k+' '+(k==1?u:plr(u)));if(r||!k)o.push(fq(r)+' '+(r==1?uS(uC(i)):uP(uC(i))));return o.join(' ')}
 function stockTxt(i){const pq=+i.pq||0;return pq>1&&i.stock>=pq?stkLong(i)+' ('+fq(i.stock)+' '+uA(uC(i))+')':pq>1?stkLong(i):fq(i.stock)+uSuf(i,i.stock)}
-function packAmt(i,q,p,pp){const pq=+i.pq||0,P=p??i.price,B=pp??i.pp;if(pq>1&&(pp!==undefined?pp>=0:B>0)){const k=Math.floor(q/pq+1e-9);return k*B+(q-k*pq)*P}return q*P}
+/* the sold quantity split the way it is priced: whole boxes at the box rate, the loose pieces at the piece rate */
+function packParts(i,q,p,pp){const pq=+i.pq||0,P=p??i.price,B=pp??i.pp;if(pq>1&&(pp!==undefined?pp>=0:B>0)){const k=Math.floor(q/pq+1e-9);return[{q:k*pq,g:k*B,box:1},{q:q-k*pq,g:(q-k*pq)*P}]}return[{q,g:q*P}]}
+function packAmt(i,q,p,pp){return packParts(i,q,p,pp).reduce((a,x)=>a+x.g,0)}
 /* ---- back button / swipe: every open layer owns exactly one history entry ---- */
 let HD=0,ign=0,shT=0,picking=0;
 function pickFile(){picking=1;const i=$('#rst');i.value='';i.click()}
@@ -1823,7 +1824,7 @@ const edBrowse=v=>{edBr=v;edFind(1)};
 function edEnter(){const v=(($('#edq')||{}).value||'').trim();if(!v)return;const q=v.toLowerCase(),H=db.items.filter(i=>!i.hide&&(i.code==v||i.name.toLowerCase().includes(q))),c=H.find(i=>i.code==v)||(H.length==1?H[0]:null),P=EDP[edT];if(c)window[P.add](c.id);else if(!H.length)window[P.code](v)}
 const edSrch=t=>`<div class="ddw"><div class="ddw stk">${searchBox({id:'edq',ph:'Search item or scan barcode',ev:`oninput="edFind(1)" onkeydown="if(event.key=='Enter')edEnter()" enterkeyhint="search"`,btns:scanBtn(`edClose();${EDP[t].scan}`,'Scan item barcode')})}<div id="edt">${edList(t,'')[0]}</div></div><div id="edl">${edList(t,'')[1]}</div></div>`
 function edDraw(){const d=$('#ied');if(!d||!d.open)return;let h='',x=-1;
- if(edT=='s'){const ls=cart.map(line).filter(Boolean);if(edK!=null){x=ls.findIndex(l=>l.id==edK);if(x>=0)h=cartRow(ls[x],x)}}
+ if(edT=='s'){const ls=cartLines();if(edK!=null){x=ls.findIndex(l=>l.id==edK);if(x>=0)h=cartRow(ls[x],x)}}
  else if(edK!=null){const P=pcalc();x=P.ls.findIndex(l=>l.id==edK);if(x>=0)h=pLine(P.ls[x])}
  if(edK!=null&&x<0){edK=null;edNew=false;edPend=null}
  if(edK==null)h=edSrch(edT);
@@ -1848,8 +1849,7 @@ function edMorph(dst,html){const t=document.createElement('div');t.innerHTML=htm
 function edChk(){if(edK==null)return true;const L=(edT=='s'?cart:pcart).find(x=>x.id==edK);if(!L)return true;
  if((edT=='s'?lineIssues(L):pIssues(L)).some(Boolean)){edTouch=1;cartUpd();const e=$('#ce'+edK);if(e){e.scrollIntoView({block:'nearest'});e.classList.remove('flash');void e.offsetWidth;e.classList.add('flash')}return false}
  return true}
-let edRev=0;
-function edOk(){if(Date.now()-edRev<300)return false;if(!edChk())return false;edPend=null;edCommit=1;return true}
+function edOk(){if(!edChk())return false;edPend=null;edCommit=1;return true}
 function edSave(){if(!edOk())return;if(edNew){edAdd(edT);render()}else edClose()}
 function edDone(){if(edOk())edClose()}
 function edShow(t,id,nw){edT=t;edK=id;edNew=!!nw;{const L0=id!=null&&(t=='s'?cart:pcart).find(x=>x.id==id);edQ0=L0&&L0.q>0?L0.q:0;edCommit=0;edTouch=0;edSnap=id==null?null:edPre&&edPre.id==id?edPre:L0?{...L0}:null;edPre=null}if(nw&&id!=null){const L=(t=='s'?cart:pcart).find(x=>x.id==id);edPend=L&&!(L.q>0)?id:null;edPT=t}else if(id==null)edPend=null;const d=$('#ied');if(!d.open){d.show();$('#iedbk').hidden=false;syncHist()}edDraw()}
@@ -1871,45 +1871,58 @@ const cartSum=l=>{const w=lineW(l);return`<div class="card line tap" onclick="ed
 const pLbl=l=>{const i=db.items.find(x=>x.id==l.id)||{},pq=+i.pq>1?+i.pq:0,c=uC(l),u=uQ(c,l.q);if(!pq)return fq(l.q)+' '+u+' · ₹'+money(l.r)+'/'+uA(c);const pu=esc(i.pu||'Box'),k=Math.floor(l.q/pq+1e-9),rm=Math.round((l.q-k*pq)*1000)/1000,pk=k&&rm?fq(k)+' '+pu+' + '+fq(rm)+' '+uQ(c,rm):k?fq(k)+' '+pu:fq(rm)+' '+uQ(c,rm);return pk+(k?' ('+fq(l.q)+' '+u+')':'')+' · ₹'+money(l.r)+'/'+((l.ru||1)>1?pu.toLowerCase():uA(c))};
 const pSum=l=>`<div class="card line tap" onclick="edShow('p',${l.id})"><div class="gr"><b>${esc(l.n)}</b><span class="m">${l.q>0?pLbl(l):'Enter quantity'}${l.g?' · GST '+l.g+'%':''}</span></div><b class="amt">₹${money(l.a+l.t)}</b>${edBtns('p',l.id,'prem')}</div>`;
 const csNote=l=>{const i=l.i,av=billAvailQ(i),aft=Math.round((av-l.q)*1000)/1000,gst=+(l.g??i.gst)>0?(l.g??i.gst)+'%':'none',stk=billStkTxt(i),w=lineW(l),wt=w?` · Warranty ${esc(wFmt(w.wv,w.wu))}`:'';return((editId||l.q>0)?`In stock ${stk} · ${aft<0?`<b class="due">short by ${stkLong({...i,stock:-aft})}</b>`:`${stkLong({...i,stock:aft})} left after this sale`} · GST ${gst}`:`In stock ${stk} · GST ${gst}`)+wt};
+const rtLow=(raw,def)=>raw<def-0.0001;
+function rstSet(b,raw,def){if(!b)return;b.hidden=Math.abs(raw-def)<=0.0001;b.classList.toggle('red',rtLow(raw,def))}
 const defRt=(l,k)=>{const i=l.i||tierItem(db.items.find(x=>x.id==l.id))||{},pq=+i.pq>1?+i.pq:0,d=k=='p'?i.price:(i.pp>0?i.pp:i.price*pq);return(l.o&&l.o[k]!==undefined)?l.o[k]:d};
 const cartRow=(l,ix,LL)=>{const i=l.i,pq=+i.pq>1?+i.pq:0,pu=esc(i.pu||'Box'),k=pq?Math.floor(l.q/pq+1e-9):0,r=pq?Math.round((l.q-k*pq)*1000)/1000:l.q,P=l.p??i.price,B=l.pp??(i.pp>0?i.pp:i.price*pq),
  stp=(lab,v,id,dn,up)=>`<div class="f"><label>${lab}</label><div class="st"><button type="button" onclick="qty(${l.id},${dn})">−</button><input id="${id}${l.id}" type="number" step="any" inputmode="decimal" value="${v}" oninput="livePcs(${l.id})" onchange="setPcs(${l.id})"><button type="button" onclick="qty(${l.id},${up})">+</button></div></div>`,
- ri=(lab,raw,k2)=>{const id=k2=='p'?'crp':'crb',def=defRt(l,k2),chg=Math.abs(raw-def)>0.0001;return `<div class="f"><label class="flr"><span>${lab}</span><button type="button" class="rst-rt" id="${id}r${l.id}" ${chg?'':'hidden'} onclick="resetRt(${l.id},'${k2}')">↺ ₹${+(+def).toFixed(2)}</button></label><input id="${id}${l.id}" type="number" step="any" inputmode="decimal" value="${+(+raw).toFixed(2)}" oninput="setRt(${l.id},'${k2}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" onblur="chkRt(${l.id},'${k2}')"></div>`},
+ ri=(lab,raw,k2)=>{const id=k2=='p'?'crp':'crb',def=defRt(l,k2),chg=Math.abs(raw-def)>0.0001;return `<div class="f"><label class="flr"><span>${lab}</span><button type="button" class="rst-rt${rtLow(raw,def)?' red':''}" id="${id}r${l.id}" ${chg?'':'hidden'} onclick="resetRt(${l.id},'${k2}')">↺ ₹${+(+def).toFixed(2)}</button></label><input id="${id}${l.id}" type="number" step="any" inputmode="decimal" value="${+(+raw).toFixed(2)}" oninput="setRt(${l.id},'${k2}',this.value)" onkeydown="if(event.key==='Enter')this.blur()"></div>`},
  dcF=`<div class="f mgf"><label class="flr"><span>Discount</span><span class="m" id="cd${l.id}" style="font-weight:500">${dHint(l)}</span></label><input id="cdc${l.id}" type="number" step="any" inputmode="decimal" value="${l.dv||''}" placeholder="0" oninput="setDc(${l.id},'dv',this.value,this)"><span class="mseg">${['₹','%'].map(m=>`<button type="button" class="${m==(l.dt||'₹')?'on':''}" onclick="this.blur();setDc(${l.id},'dt','${m}');render()">${m}</button>`).join('')}</span></div>`;
  return `<div class="card"><div class="line"><b class="gr">${esc(i.name)}</b><b class="amt" id="ca${l.id}">₹${money(l.amt)}</b>${edNew?`<button class="ib s" onclick="edAgain()" aria-label="Choose another item">${ic('x')}</button>`:''}</div><div class="g2" style="margin-top:6px">${pq?stp(plr(pu),k||'','kb',-pq,pq)+ri('Rate / '+pu.toLowerCase(),B,'pp'):stp(uT(uC(i)),l.q||'','kp',-1,1)+ri('Rate / '+uS(uC(i)),P,'p')}</div>${pq?`<div class="g2">${stp(uT(uC(i)),r||'','kp',-1,1)}${ri('Rate / '+uS(uC(i)),P,'p')}</div>`:''}<div class="g2">${dcF}<div></div></div><div class="ce" id="ce${l.id}">${ceHtml(l)}</div><div class="m" id="cs${l.id}">${csNote(l)}</div></div>`};
 function setPcs(id){const it=db.items.find(x=>x.id==id)||{},pq=+it.pq>1?+it.pq:0,b=$('#kb'+id),p=$('#kp'+id);setq(id,Math.round(((pq?(+(b&&b.value)||0)*pq:0)+(+(p&&p.value)||0))*1000)/1000)}
 function setRt(id,k,v){const l=cart.find(x=>x.id==id),i=tierItem(db.items.find(x=>x.id==id))||{},pq=+i.pq>1?+i.pq:0;v=Math.max(+v||0,0);if(!l)return;const d=k=='p'?i.price:(i.pp>0?i.pp:i.price*pq);if(Math.abs(v-d)<.0001)delete l[k];else l[k]=v;billPreSnap=null;edTouch=1;cartUpd()}
 function resetRt(id,k){const l=cart.find(x=>x.id==id);if(!l)return;const o=l.o;if(o&&o[k]!==undefined)l[k]=o[k];else delete l[k];billPreSnap=null;edTouch=1;const e=$('#'+(k=='p'?'crp':'crb')+id);if(e&&document.activeElement===e)e.blur();cartUpd()}
-function chkRt(id,k){const l=cart.find(x=>x.id==id);if(!l)return;const x=line(l);if(!x)return;const def=defRt(x,k),cur=k=='p'?(x.p??x.i.price):(x.pp??(x.i.pp>0?x.i.pp:x.i.price*(+x.i.pq>1?+x.i.pq:0)));if(cur<def-0.0001){const o=l.o;if(o&&o[k]!==undefined)l[k]=o[k];else delete l[k];edRev=Date.now();warn('Lower price not allowed — use Discount instead');cartUpd()}}
 function setDc(id,k,v,el){const l=cart.find(x=>x.id==id);if(!l)return;if(k=='dv'){l.dv=+v||0;billPreSnap=null;cartUpd();return}l.dt=v;billPreSnap=null;cartUpd()}
+const cartLines=()=>cart.map(line).filter(Boolean),shownLines=()=>shown().map(line).filter(Boolean);
 function shown(){if(edT!='s'||edK==null)return cart;return cart.flatMap(l=>l.id!=edK?[l]:edPend==edK?[]:edSnap&&edSnap.id==edK?[edSnap]:[l])}
 const dHint=l=>l.ld>0.004?(l.dt=='%'?'= ₹'+money(l.ld):'= '+(+(l.ld/Math.max(l.gross,0.01)*100).toFixed(2))+'%'):'',
  bdHint=T=>T.bd>0.004?(bdt=='%'?'= ₹'+money(T.bd):'= '+(+(T.bd/Math.max(T.sub,0.01)*100).toFixed(2))+'%'):'';
-function cartUpd(){const lv=cart.map(line).filter(Boolean),ls=shown().map(line).filter(Boolean),T=totals(ls),act=document.activeElement;lv.forEach(l=>{const i=l.i,pq=+i.pq>1?+i.pq:0,P=l.p??i.price,B=l.pp??(i.pp>0?i.pp:i.price*pq),dp=defRt(l,'p'),dbp=defRt(l,'pp');const ca=$('#ca'+l.id);if(ca)ca.textContent='₹'+money(l.amt);const rp=$('#crp'+l.id);if(rp&&act!==rp)rp.value=+(+P).toFixed(2);const rb=$('#crb'+l.id);if(rb&&act!==rb)rb.value=+(+B).toFixed(2);const rpr=$('#crpr'+l.id);if(rpr)rpr.hidden=Math.abs(P-dp)<=0.0001;const rbr=$('#crbr'+l.id);if(rbr)rbr.hidden=Math.abs(B-dbp)<=0.0001;const dc=$('#cdc'+l.id);if(dc&&act!==dc)dc.value=l.dv||'';const e2=$('#ce'+l.id);if(e2)e2.innerHTML=ceHtml(l);const e3=$('#cd'+l.id);if(e3)e3.textContent=dHint(l);const s=$('#cs'+l.id);if(s)s.innerHTML=csNote(l)});const bh=$('#bdh');if(bh)bh.textContent=bdHint(T);const bd=$('#bde');if(bd)bd.innerHTML=issHtml([billIssue(ls)]);const t=$('#ctot');if(t&&act!==$('#ctot_inp'))t.textContent='₹'+money(T.t);const ti=$('#ctot_inp');if(ti&&act!==ti)ti.value=T.t>0?T.t:'';const rsb=$('#ctot_rst');if(rsb){rsb.hidden=!billPreSnap;if(billPreSnap)rsb.textContent='↺ ₹'+money(billPreSnap.tot)}const ds=$('#dsum');if(ds)ds.innerHTML=dsumH(ls,T);const g=$('#gstb');if(g)g.innerHTML=gstBox(ls,T,db.parties.find(x=>x.id==bparty));advRef('s');splitUpd('s');const c=$('#ctl');if(c)c.textContent='Total'+(!comp()&&ls.length?' · GST ₹'+money(T.tax):'');const hd=$('#cth');if(hd)hd.textContent='Cart'+(ls.length?' · '+ls.length+(ls.length==1?' item':' items')+' · qty '+qtySum(ls):'')}
-function editBillTot(){const ls=shown().map(line).filter(Boolean);if(!ls.length)return;const t=$('#ctot'),inp=$('#ctot_inp');if(!t||!inp)return;const cur=totals(ls).t;t.style.display='none';inp.hidden=false;inp.value=cur>0?cur:'';inp.focus();try{inp.select()}catch(_){}}
+function cartUpd(){const lv=cartLines(),ls=shownLines(),T=totals(ls),act=document.activeElement;lv.forEach(l=>{const i=l.i,pq=+i.pq>1?+i.pq:0,P=l.p??i.price,B=l.pp??(i.pp>0?i.pp:i.price*pq),dp=defRt(l,'p'),dbp=defRt(l,'pp');const ca=$('#ca'+l.id);if(ca)ca.textContent='₹'+money(l.amt);const rp=$('#crp'+l.id);if(rp&&act!==rp)rp.value=+(+P).toFixed(2);const rb=$('#crb'+l.id);if(rb&&act!==rb)rb.value=+(+B).toFixed(2);rstSet($('#crpr'+l.id),P,dp);rstSet($('#crbr'+l.id),B,dbp);const dc=$('#cdc'+l.id);if(dc&&act!==dc)dc.value=l.dv||'';const e2=$('#ce'+l.id);if(e2)e2.innerHTML=ceHtml(l);const e3=$('#cd'+l.id);if(e3)e3.textContent=dHint(l);const s=$('#cs'+l.id);if(s)s.innerHTML=csNote(l)});const bh=$('#bdh');if(bh)bh.textContent=bdHint(T);const bd=$('#bde');if(bd)bd.innerHTML=issHtml([billIssue(ls)]);const t=$('#ctot');if(t&&act!==$('#ctot_inp'))t.textContent='₹'+money(T.t);const ti=$('#ctot_inp');if(ti&&act!==ti)ti.value=T.t>0?T.t:'';const rsb=$('#ctot_rst');if(rsb){rsb.hidden=!billPreSnap;if(billPreSnap)rsb.textContent='↺ ₹'+money(billPreSnap.tot)}const ds=$('#dsum');if(ds)ds.innerHTML=dsumH(ls,T);const g=$('#gstb');if(g)g.innerHTML=gstBox(ls,T,db.parties.find(x=>x.id==bparty));advRef('s');splitUpd('s');const c=$('#ctl');if(c)c.textContent='Total'+(!comp()&&ls.length?' · GST ₹'+money(T.tax):'');const hd=$('#cth');if(hd)hd.textContent='Cart'+(ls.length?' · '+ls.length+(ls.length==1?' item':' items')+' · qty '+qtySum(ls):'')}
+function editBillTot(){const ls=shownLines();if(!ls.length)return;const t=$('#ctot'),inp=$('#ctot_inp');if(!t||!inp)return;const cur=totals(ls).t;t.style.display='none';inp.hidden=false;inp.value=cur>0?cur:'';inp.focus();try{inp.select()}catch(_){}}
 function undoBillTot(){if(!billPreSnap)return;const snap=billPreSnap;billPreSnap=null;cart.length=0;snap.cart.forEach(l=>cart.push(JSON.parse(JSON.stringify(l))));cartUpd();render();toast('Bill total restored to ₹'+money(snap.tot))}
-function blurBillTot(){const t=$('#ctot'),inp=$('#ctot_inp');if(!t||!inp)return;inp.hidden=true;t.style.display='';const val=+inp.value||0;if(!(val>0))return cartUpd();const ls=shown().map(line).filter(Boolean);if(!ls.length)return cartUpd();const curT=totals(ls).t;if(Math.abs(val-curT)<=0.005)return cartUpd();
+function blurBillTot(){const t=$('#ctot'),inp=$('#ctot_inp');if(!t||!inp)return;inp.hidden=true;t.style.display='';const val=+inp.value||0;if(!(val>0))return cartUpd();const ls=shownLines();if(!ls.length)return cartUpd();const curT=totals(ls).t;if(Math.abs(val-curT)<=0.005)return cartUpd();
  const origBase=billPreSnap?billPreSnap.tot:curT;
  if(val<origBase-0.005){warn('Lower total not allowed — use Extra discount on the whole bill instead');return cartUpd()}
  const snap=billPreSnap||{tot:curT,cart:cart.map(l=>JSON.parse(JSON.stringify(l)))};
- let targetGross=val+(totals(ls).bd||0),curGross=ls.reduce((s,l)=>s+l.gross,0);if(!(curGross>0))return cartUpd();
- const factor=targetGross/curGross;
- let mrpHit=0;
- ls.forEach(l=>{const i=l.i,c=cart.find(x=>x.id==l.id);if(!c)return;const pq=+i.pq>1?+i.pq:0,mrp=+i.mrp>0?+i.mrp:Infinity;
-  const scale=(cur,def,maxVal)=>{const scaled=+(cur*factor).toFixed(8);if(scaled>maxVal+0.0001){mrpHit=1;return maxVal}return Math.abs(scaled-def)<=0.0001?undefined:scaled};
+ const T0=totals(ls),targetSub=bdt=='%'&&+bdv>0&&T0.bd>0?val/(1-Math.min(+bdv,99.99)/100):val+(T0.bd||0),curSub=ls.reduce((s,l)=>s+l.amt,0);if(!(curSub>0))return cartUpd();
+ const factor=targetSub/curSub,
+  /* the rate factor for a line: a % item discount scales with the rate, a fixed ₹ item discount does not, so only the part above it is scaled */
+  lf=(l,fc)=>l.ld>0.004&&l.dt!='%'&&l.gross>0?(l.amt*fc+l.ld)/l.gross:fc,
+  /* true while a rate that is actually used in the sold quantity (boxes and/or pieces) can still go higher; MRP is the ceiling */
+  room=x=>{const i=x.i,pq=+i.pq>1?+i.pq:0,mrp=+i.mrp>0?+i.mrp:Infinity,P=x.p??i.price,B=x.pp??(i.pp>0?i.pp:i.price*pq);return packParts(i,x.q,x.p,x.pp).some(t=>t.q>1e-9&&(mrp==Infinity||(t.box?B<mrp*pq-0.0001:P<mrp-0.0001)))};
+ let cut=0;
+ const scaleLines=(arr,fc)=>arr.forEach(l=>{const i=l.i,c=cart.find(x=>x.id==l.id);if(!c)return;const pq=+i.pq>1?+i.pq:0,mrp=+i.mrp>0?+i.mrp:Infinity,f=lf(l,fc);
+  const scale=(cur,def,maxVal)=>{const scaled=+(cur*f).toFixed(8);const v=scaled>maxVal+0.0001?maxVal:scaled;return Math.abs(v-def)<=0.0001?undefined:v};
   if(!pq){const nv=scale(l.p??i.price,i.price,mrp);if(nv===undefined)delete c.p;else c.p=nv}
   else{const curP=l.p??i.price,curPP=l.pp??(i.pp>0?i.pp:i.price*pq);
    const nvP=scale(curP,i.price,mrp),nvPP=scale(curPP,i.pp>0?i.pp:i.price*pq,mrp*pq);
    if(nvP===undefined)delete c.p;else c.p=nvP;if(nvPP===undefined)delete c.pp;else c.pp=nvPP}});
- const newT=totals(cart.map(line).filter(Boolean)).t,diff=val-newT;
+ /* 1) scale every line; 2) lines stopped at their MRP leave a shortfall, so the lines that still have room take it over */
+ scaleLines(ls,factor);
+ for(let n=0;n<8;n++){const L=cartLines(),need=targetSub-L.reduce((s,x)=>s+x.amt,0);if(need<0.005)break;const U=L.filter(room),ua=U.reduce((s,x)=>s+x.amt,0);if(!U.length||!(ua>0))break;scaleLines(U,(ua+need)/ua)}
+ /* 3) still short: every line is at its MRP, so the item discounts are reduced, in proportion, only as far as needed */
+ {const L=cartLines(),need=targetSub-L.reduce((s,x)=>s+x.amt,0),E=L.filter(x=>x.ld>0.004&&!room(x)),R=E.reduce((s,x)=>s+x.ld,0);
+  if(need>0.005&&R>0){const keep=Math.max(0,1-need/R);E.forEach(x=>{const c=cart.find(z=>z.id==x.id);if(!c)return;c.dv=keep<0.0005?0:x.dt=='%'?+(x.ld/x.gross*100*keep).toFixed(4):+(x.ld*keep).toFixed(2);cut++})}}
+ const newT=totals(cartLines()).t,diff=val-newT;
  if(Math.abs(diff)>=0.01&&Math.abs(diff)<=0.5){
   const adjL=[...cart].map(c=>({c,x:line(c)})).filter(o=>o.x&&o.x.q>0).sort((a,b)=>b.x.amt-a.x.amt)[0];
-  if(adjL){const {c,x}=adjL,pq=+x.i.pq>1?+x.i.pq:0;
-   if(!pq){const cur=c.p??x.i.price,nv=+(cur+diff/x.q).toFixed(8);if(nv>=(x.i.price-0.0001)&&nv<=(+x.i.mrp>0?+x.i.mrp:Infinity)+0.0001)c.p=nv}
-   else{const k=Math.floor(x.q/pq+1e-9);if(k>0){const cur=c.pp??(x.i.pp>0?x.i.pp:x.i.price*pq),nv=+(cur+diff/k).toFixed(8);if(nv<=(+x.i.mrp>0?+x.i.mrp*pq:Infinity)+0.0001)c.pp=nv}}}}
+  if(adjL){const {c,x}=adjL,pq=+x.i.pq>1?+x.i.pq:0,w=x.ld>0.004&&x.dt=='%'?1-Math.min(+x.dv,100)/100:1;
+   if(w<0.0001);else if(!pq){const cu=c.p??x.i.price,nv=+(cu+diff/(x.q*w)).toFixed(8);if(nv>0&&nv<=(+x.i.mrp>0?+x.i.mrp:Infinity)+0.0001)c.p=nv}
+   else{const k=Math.floor(x.q/pq+1e-9);if(k>0){const cu=c.pp??(x.i.pp>0?x.i.pp:x.i.price*pq),nv=+(cu+diff/(k*w)).toFixed(8);if(nv<=(+x.i.mrp>0?+x.i.mrp*pq:Infinity)+0.0001)c.pp=nv}}}}
  billPreSnap=snap;cartUpd();render();
- if(mrpHit&&totals(cart.map(line).filter(Boolean)).t<val-0.005)toast('Some items reached their printed MRP ceiling');
- else toast('Bill total updated to ₹'+money(totals(cart.map(line).filter(Boolean)).t))}
+ const fin=totals(cartLines()).t;
+ if(fin<val-0.5)toast('Highest possible total is ₹'+money(fin)+' — all items are at MRP'+(cut?', discounts removed':''));
+ else toast('Bill total updated to ₹'+money(fin)+(cut?' · discount reduced on '+cut+(cut==1?' item':' items'):''))}
 function saleRest(ls,T,pt){
  return `<div class="sec">Extra discount on the whole bill</div><div class="sb"><input type="number" inputmode="decimal" value="${bdv}" placeholder="0" oninput="bdv=this.value;cartUpd()"><div class="seg" style="flex:none;width:110px">${['₹','%'].map(m=>`<button class="${bdt==m?'on':''}" onclick="bdt='${m}';render()">${m}</button>`).join('')}</div></div><div class="m" id="bdh">${bdHint(T)}</div><div class="ce" id="bde">${issHtml([billIssue(ls)])}</div>`}
 function salePay(ls,T,pt){
@@ -1936,7 +1949,7 @@ function delRec(coll,id,label,ok){const a=db[coll],r=a.find(x=>x.id==id);if(!r)r
  db[coll]=a.filter(x=>x.id!=id);db.tomb[id]=Date.now();const adv=coll=='bills'?['pays','Advance with bill ']:coll=='purch'?['spays','Advance with invoice ']:0;if(adv)db[adv[0]]=db[adv[0]].filter(y=>{const k=y.adv&&(y.bill?y.bill==r.id:y.note==adv[1]+r.no);if(k)db.tomb[y.id]=Date.now();return !k});
  const rp=coll=='purch'?syncCosts(r.lines.map(l=>l.id)):(coll=='notes'?noteSync(r):0);recalc();save();render();pgBack();pgRefresh();toast(label[0].toUpperCase()+label.slice(1)+' deleted'+(rp?' · selling price restored for '+rp+' item'+(rp==1?'':'s'):''))}
 function editEst(id){const e=db.est.find(x=>x.id==id);if(!e||e.void||e.status=='converted')return;flowFrom(null,1);closeAll();resetSale();isEst=true;editEstId=id;cart=e.lines.map(savedLine);bparty=e.pid||'';bwh=!!e.wh;bdv=e.bdv!==undefined?String(e.bdv):(e.bd?String(e.bd):'');bdt=e.bdt=='%'?'%':'₹';bdate=dayStr(e.t);tab='bill';render()}
-const curTot=k=>k=='s'?totals(shown().map(line).filter(Boolean)).t:pcalc().tot;
+const curTot=k=>k=='s'?totals(shownLines()).t:pcalc().tot;
 function advRef(k){const pay=k=='s'?bpay:ppay,rc=k=='s'?brecv:precv,e=$('#'+(k=='s'?'adv1':'adv2'));if(e)e.textContent=pay=='part'&&+rc>curTot(k)+0.005?'₹'+money(+rc-curTot(k))+' extra will be kept as advance':''}
 function livePcs(id){const l=cart.find(x=>x.id==id),it=db.items.find(x=>x.id==id)||{},pq=+it.pq>1?+it.pq:0,b=$('#kb'+id),p=$('#kp'+id);if(!l)return;const q=Math.round(((pq?(+(b&&b.value)||0)*pq:0)+(+(p&&p.value)||0))*1000)/1000;edTouch=1;l.q=q>0?q:0;cartUpd()}
 const dsumH=(ls,T)=>{const d=ls.reduce((s,l)=>s+l.ld,0)+T.bd,g=ls.reduce((s,l)=>s+l.gross,0);return d>0.004?`<div class="c"><div class="line sp"><span class="m">Subtotal ₹${money(g)}</span><span class="rcv"><b>Discount −₹${money(d)}${dPct(d,g)}</b></span></div></div>`:''}
@@ -1961,7 +1974,7 @@ function retUpd(refId,kind){const src=kind=='c'?db.bills.find(x=>x.id==refId):db
 
 function custBox(pt){return `<div class="dtr" style="justify-content:space-between;align-items:center">${heldChip()}<span style="margin-left:auto">${dchip('dsl',bdate||today(),'bdate=this.value')}</span></div><div class="c"><div class="f"><label>Customer</label><div class="pick box tap" onclick="pickP('c',id=>{bparty=id})">${pt?`${av(pt.name)}<div class="gr"><b>${esc(pt.name)}</b><span class="m">${pt.bal>0.005?'Owes ₹'+money(pt.bal)+(odOf(pt,editId)>0.5?' · <b class="due">₹'+money(odOf(pt,editId))+' overdue</b>':''):pt.bal<-0.005?'Advance ₹'+money(-pt.bal):esc(pt.phone||'')}</span></div><button class="ib s" onclick="event.stopPropagation();bparty='';render()" aria-label="Remove customer">${ic('x')}</button>`:`<div class="gr"><b>Walk-in customer</b><span class="m">Tap to choose a saved customer</span></div>${ic('chev')}`}</div></div><div class="f" style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:10px"><label style="margin:0">Price level</label><div class="seg" style="flex:none;width:200px">${[[0,'Retail'],[1,'Wholesale']].map(([v,l])=>`<button type="button" class="${!!v==bwh?'on':''}" onclick="setWh(${v})">${l}</button>`).join('')}</div></div></div>`}
 function setWh(v){bwh=!!v;cart.forEach(l=>{delete l.p;delete l.pp;delete l.o});render()}
-function vSale(){const ls=shown().map(line).filter(Boolean),T=totals(ls),pt=db.parties.find(x=>x.id==bparty),qn=ls.reduce((s,l)=>s+l.q,0);
+function vSale(){const ls=shownLines(),T=totals(ls),pt=db.parties.find(x=>x.id==bparty),qn=ls.reduce((s,l)=>s+l.q,0);
  return custBox(pt)+`
  <div class="sec" id="cth" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>Cart${ls.length?' · '+ls.length+(ls.length==1?' item':' items')+' · qty '+esc(qtySum(ls)):''}</span>${canHold()?`<button type="button" class="btn sm o" style="flex:none;min-height:28px;padding:2px 10px;font-size:12px;text-transform:none;letter-spacing:0" onclick="holdCart()">Hold ${isEst?'estimate':'bill'}</button>`:''}</div>${ls.map(cartSum).join('')||'<div class="empty"><b>Cart is empty</b><span class="m">Tap “Add item” to add the first one.</span></div>'}<div style="display:flex;justify-content:flex-end;gap:8px;margin:6px 0"><button class="btn sm o" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="billScan()">${ic('scan')} Scan</button><button class="btn sm" style="flex:none;min-height:34px;padding:6px 14px;font-size:14px" onclick="edAdd('s')">${ic('plus')} Add item</button></div>
  ${ls.length?saleRest(ls,T,pt):''}<div id="dsum">${dsumH(ls,T)}</div><div id="gstb">${gstBox(ls,T,pt)}</div>${ls.length?salePay(ls,T,pt):''}
@@ -1983,18 +1996,26 @@ function creditCheck(pt,total,given,due,editId){
  if(vo)m.push('₹'+money(od)+' of the dues is older than '+crD()+' days.');
  return m.join(' ')+' Receive at least ₹'+money(need)+' now to give more credit.'}
 /* a line that would sell for less than it cost, after every discount (all amounts include GST) */
-const mpP=()=>{const v=db.shop.minProfit;return v==null||v===''?1:Math.min(99,Math.max(0,+v||0))};
+const mpP=()=>{const v=db.shop.minProfit;return v==null||v===''?1:Math.min(99,Math.max(0,+v||0))},mgM=()=>mk(mpP());
 /* what the line cost, GST included (0 when no purchase cost is saved, so it is not checked) */
-function costNeed(l){if(!l||!l.i||!(+l.i.cost>0)||!(l.q>0))return 0;const unit=pbase(l.i);return unit>0?l.q*unit:0}
 /* never below cost; with any discount (on the item or the whole bill) never below cost plus the minimum profit */
+const costNeed=l=>marginParts(l).reduce((a,t)=>a+t.need,0);
+/* the parts of a line that each need their own margin check (empty when no purchase cost is saved) */
+function marginParts(l){const i=l&&l.i;if(!i||!(+i.cost>0)||!(l.q>0))return[];const u=pbase(i);return u>0?packParts(i,l.q,l.p,l.pp).filter(x=>x.q>1e-9).map(x=>({...x,need:x.q*u})):[]}
+/* true when any part sells below its minimum; useDisc checks the price after the item discount, otherwise the rate itself */
+function marginBad(x,useDisc){const f=useDisc&&x.gross>0?x.amt/x.gross:1,m=mgM();return marginParts(x).filter(t=>t.g*f<t.need/m-Math.max(0.02,0.0051*t.q))}
+const marginLow=(x,useDisc)=>marginBad(x,useDisc).length>0;
+/* most item discount (in rupees) allowed on a line priced at its own rates, so no part drops below its minimum */
+function discRoom(x0){const ps=marginParts(x0),m=mgM();if(!ps.length)return 0;const need=Math.max(...ps.map(t=>t.g>0?t.need/m*x0.gross/t.g:Infinity));return Number.isFinite(need)?Math.max(0,x0.gross-Math.ceil(need*100-1e-9)/100):0}
 /* One place that says why a quantity, rate or discount is not allowed and what the limit is. It runs live in the item popup, on the bill list and when saving,
    for a new sale and a saved bill alike. An empty list means the line is fine. */
+const cap=a=>String(a||'').charAt(0).toUpperCase()+String(a||'').slice(1);
 const mgFl=x=>Math.floor(x*100+1e-9)/100;
 /* Editing a saved bill: a line left exactly as it was saved (same rate and discount, quantity not raised) was allowed when it was sold, so today's minimum rate must not block it.
    Anything changed or added is checked as usual, and so is the bill discount once any line or the discount itself changes. */
 const lineSame=l=>{const o=l&&l.o;return !!o&&(+l.p||0)===(+o.p||0)&&(+l.pp||0)===(+o.pp||0)&&(+l.dv||0)===(+o.dv||0)&&((+l.dv||0)==0||l.dt===o.dt)&&l.q<=o.q+1e-9},
  billSame=ls=>{const ob=editId&&db.bills.find(b=>b.id==editId);return !!ob&&ls.length==ob.lines.length&&ls.every(lineSame)&&(+bdv||0)===(+(ob.bdv!==undefined?ob.bdv:ob.bd)||0)&&((+bdv||0)==0||(bdt=='%')===(ob.bdt=='%'))};
-function bdScan(sourceLines,calculation){const ls=Array.isArray(sourceLines)?sourceLines:shown().map(line).filter(Boolean),T=calculation||discountEngine(ls);if(!(T.bd>0.005)||!T.marginExceeded)return null;return{bad:T.limitingProduct,rm:T.allowedFraction,T}}
+function bdScan(sourceLines,calculation){const ls=Array.isArray(sourceLines)?sourceLines:shownLines(),T=calculation||discountEngine(ls);if(!(T.bd>0.005)||!T.marginExceeded)return null;return{bad:T.limitingProduct,rm:T.allowedFraction,T}}
 /* puts a sale line's rate, discount and quantity back to what src holds */
 function lineTo(l,src){if(!src)return;['p','pp','dv','dt'].forEach(z=>{delete l[z];if(src[z]!==undefined)l[z]=src[z]});if(src.q!==undefined)l.q=src.q}
 const issHtml=a=>a.filter(Boolean).map(m=>typeof m=='string'?'<div>'+esc(m)+'</div>':'<div>'+esc(m.t)+(m.b?' <button type="button" class="ceb" onclick="'+m.js+'">'+m.b+'</button>':'')+'</div>').join(''),issText=m=>typeof m=='string'?m:m.t;
@@ -2002,26 +2023,24 @@ function lineIssues(l){const x=line(l);if(!x)return[];const i=x.i,q=x.q,out=[];
  if(!(q>0))return['Enter a quantity more than 0.'];
  if(!isEst&&!db.shop.neg&&db.items.some(z=>z.id==x.id)){const o=billOwnQ(i),mx=Math.max(0,Math.round((i.stock+o)*1000)/1000);if(q>mx+1e-9){const lim=stkLong({...i,stock:mx});out.push(mx<=0?`Out of stock. Stock is short by ${stkLong({...i,stock:Math.abs(Math.round((i.stock+o)*1000)/1000)})}.`:`Only ${lim} available. Maximum quantity: ${lim}.`)}}
  if(x.dv<0)out.push('Discount cannot be negative.');else if(x.dv>0&&(x.dt=='%'?x.dv>100:x.dv>x.gross+0.005))out.push(x.dt=='%'?'Item discount cannot exceed 100%.':'Item discount cannot exceed the line amount.');
- const dp=defRt(x,'p'),dbp=defRt(x,'pp'),lowRt=(x.p!==undefined&&x.p<dp-0.0001)||(x.pp!==undefined&&x.pp<dbp-0.0001);
- if(lowRt)out.push('Rate cannot be lower than ₹'+money(x.pp!==undefined&&x.pp<dbp-0.0001?dbp:dp)+'. Use Discount to lower the price.');
  const need=costNeed(x),ovr=x.p!==undefined||x.pp!==undefined,pq=+i.pq>1?+i.pq:0;
-if(need&&!lineSame(x)&&!lowRt){const mn=need/mk(mpP()),tol=Math.max(0.02,0.0051*q),R=Math.ceil((mn/q-1e-9)*100)/100,rt='₹'+money(R)+' / '+uS(uC(i))+(pq?' (₹'+money(Math.ceil((mn/q*pq-1e-9)*100)/100)+' / '+(i.pu||'pack').toLowerCase()+')':''),
-   g0=line({...l,p:undefined,pp:undefined,dv:0}).gross,room0=Math.max(0,g0-Math.ceil(mn*100-1e-9)/100),b0=mgFl(room0/Math.max(g0,0.01)*100),
+if(need&&!lineSame(x)){const mn=need/mgM(),R=Math.ceil((mn/q-1e-9)*100)/100,Rb=pq?Math.ceil((mn/q*pq-1e-9)*100)/100:0,rt='₹'+money(R)+' / '+uS(uC(i))+(pq?' (₹'+money(Rb)+' / '+(i.pu||'pack').toLowerCase()+')':''),
+   x0=line({...l,p:undefined,pp:undefined,dv:0}),g0=x0.gross,room0=discRoom(x0),b0=mgFl(room0/Math.max(g0,0.01)*100),
    fm=(a,b)=>x.dt=='%'?b+'% (₹'+money(a)+')':'₹'+money(a)+' ('+b+'%)',
-   act=room0>0.004&&b0>0?{t:'Revert rate and apply maximum discount. Maximum discount: '+fm(room0,b0)+'.',b:'APPLY',js:'applyMax('+x.id+')'}:null;
-  if(x.gross<mn-tol){out.push(ovr?'Rate is below the lowest allowed. Minimum rate: '+rt+'.':"This item's price is below the lowest allowed (minimum "+rt+"). Raise it on the Items page.");if(act&&ovr)out.push(act);else if(x.ld>0.005)out.push('No discount is allowed at this rate.')}
-  else if(x.amt<mn-tol){if(!ovr)out.push(act?{t:'Discount is more than allowed. Maximum discount: '+fm(room0,b0)+'.',b:'APPLY',js:'applyMax('+x.id+')'}:'Discount is more than allowed.');else{out.push('Discount is more than allowed.');if(act)out.push(act)}}}else if((x.p!==undefined&&!(x.p>0))||(x.pp!==undefined&&!(x.pp>0)))out.push('Enter a rate above 0.');
+   act=room0>0.004&&b0>0?{t:'Reset to normal rates with the maximum discount: '+fm(room0,b0)+'.',b:'APPLY',js:'applyMax('+x.id+')'}:null;
+  if(marginLow(x,0)){if(ovr&&pq)marginBad(x,0).forEach(t=>out.push((t.box?cap(i.pu||'Box')+' rate':cap(uS(uC(i)))+' rate')+' is below the lowest allowed. Minimum: ₹'+money(t.box?Rb:R)+' / '+(t.box?(i.pu||'box').toLowerCase():uS(uC(i)))+'.'));else out.push(ovr?'Rate is below the minimum allowed amount: ₹'+money(Math.ceil(mn*100-1e-9)/100)+'.':"This item's price is below the lowest allowed (minimum "+rt+"). Raise it on the Items page.");if(act&&ovr)out.push(act);else if(x.ld>0.005)out.push('No discount is allowed at this rate.')}
+  else if(marginLow(x,1)){if(!ovr)out.push(act?{t:'Discount is more than allowed. Maximum discount: '+fm(room0,b0)+'.',b:'APPLY',js:'applyMax('+x.id+')'}:'Discount is more than allowed.');else{out.push('Discount is more than allowed.');if(act)out.push(act)}}}else if((x.p!==undefined&&!(x.p>0))||(x.pp!==undefined&&!(x.pp>0)))out.push('Enter a rate above 0.');
  return out}
 /* sets the item's discount to the most allowed, with the rate back at the product's own rate */
-function applyMax(id){const l=cart.find(x=>x.id==id);if(!l)return;const x0=line({...l,p:undefined,pp:undefined,dv:0}),need=costNeed(x0);if(!need)return;const room=Math.max(0,x0.gross-Math.ceil(need/mk(mpP())*100-1e-9)/100),dt=l.dt=='%'?'%':'₹';delete l.p;delete l.pp;l.dt=dt;l.dv=room>0.004?(dt=='%'?mgFl(room/Math.max(x0.gross,0.01)*100):mgFl(room)):0;edTouch=1;render()}
+function applyMax(id){const l=cart.find(x=>x.id==id);if(!l)return;const x0=line({...l,p:undefined,pp:undefined,dv:0});if(!costNeed(x0))return;const room=discRoom(x0),dt=l.dt=='%'?'%':'₹';delete l.p;delete l.pp;l.dt=dt;l.dv=room>0.004?(dt=='%'?mgFl(room/Math.max(x0.gross,0.01)*100):mgFl(room)):0;edTouch=1;render()}
 /* sets the whole-bill discount to the most allowed */
 function applyBill(){const S=bdScan();if(!S)return;bdv=String(bdt=='%'?mgFl(S.rm*100):mgFl(S.T.maxBillDiscount));render()}
-function billIssue(sourceLines){const raw=String(bdv??'').trim();if(raw==='')return'';const value=Number(raw);if(!Number.isFinite(value))return'Enter a valid bill discount.';if(value===0)return'';if(value<0)return'Discount cannot be negative.';const ls=Array.isArray(sourceLines)?sourceLines:shown().map(line).filter(Boolean),T=discountEngine(ls,bdv,bdt);if(bdt=='%'&&value>100)return'Bill discount cannot exceed 100%.';const requested=bdt=='%'?T.sub*value/100:value;if(requested>T.sub+0.005)return'Bill discount cannot exceed the bill subtotal of ₹'+money(T.sub)+'.';const S=bdScan(ls,T);if(!S||billSame(ls))return'';const{bad,rm}=S,a=mgFl(T.maxBillDiscount),b=mgFl(rm*100);return{t:'Bill discount is more than allowed (limited by '+(bad||'the current cart')+'). Maximum bill discount: '+(bdt=='%'?b+'% (₹'+money(a)+')':'₹'+money(a)+' ('+b+'%)')+'.',...((bdt=='%'?b:a)>0?{b:'APPLY',js:'applyBill()'}:{})}}
+function billIssue(sourceLines){const raw=String(bdv??'').trim();if(raw==='')return'';const value=Number(raw);if(!Number.isFinite(value))return'Enter a valid bill discount.';if(value===0)return'';if(value<0)return'Discount cannot be negative.';const ls=Array.isArray(sourceLines)?sourceLines:shownLines(),T=discountEngine(ls,bdv,bdt);if(bdt=='%'&&value>100)return'Bill discount cannot exceed 100%.';const requested=bdt=='%'?T.sub*value/100:value;if(requested>T.sub+0.005)return'Bill discount cannot exceed the bill subtotal of ₹'+money(T.sub)+'.';const S=bdScan(ls,T);if(!S||billSame(ls))return'';const{bad,rm}=S,a=mgFl(T.maxBillDiscount),b=mgFl(rm*100);return{t:'Bill discount is more than allowed (limited by '+(bad||'the current cart')+'). Maximum bill discount: '+(bdt=='%'?b+'% (₹'+money(a)+')':'₹'+money(a)+' ('+b+'%)')+'.',...((bdt=='%'?b:a)>0?{b:'APPLY',js:'applyBill()'}:{})}}
 function pIssues(l){const o=[];if(l.id==edPend&&!edTouch)return o;if(!(l.q>0))o.push('Enter a quantity more than 0.');if(!(l.r>0))o.push('Enter a rate more than 0.');if(l.mrp!=null&&l.mrp!==''&&!(+l.mrp>0))o.push('MRP must be more than 0, or leave it empty.');return o}
 /* informational only (never blocks): a saved-bill line kept as sold that is below today's minimum rate */
-function lineNote(l){const x=line(l);if(!x||!lineSame(x))return'';const need=costNeed(x);if(!need)return'';const mn=need/mk(mpP());return x.amt<mn-0.02?'<div class="cn">Sold below today\'s minimum rate (₹'+money(mn/x.q)+' / '+uS(uC(x.i))+'). Kept as originally sold.</div>':''}
+function lineNote(l){const x=line(l);if(!x||!lineSame(x))return'';const need=costNeed(x);if(!need)return'';const mn=need/mgM();return marginLow(x,1)?'<div class="cn">Sold below today\'s minimum rate (₹'+money(mn/x.q)+' / '+uS(uC(x.i))+'). Kept as originally sold.</div>':''}
 const ceHtml=l=>l.id==edPend&&!edTouch?'':issHtml(lineIssues(l))+lineNote(l);
-function finish(p,lim){const ls=cart.map(line).filter(Boolean);if(!ls.length)return warn('Add items first');if(ls.some(l=>!(l.q>0)))return warn('Enter the quantity for every item');
+function finish(p,lim){const ls=cartLines();if(!ls.length)return warn('Add items first');if(ls.some(l=>!(l.q>0)))return warn('Enter the quantity for every item');
  const T=totals(ls),pt=db.parties.find(x=>x.id==bparty),r2=x=>Math.round(x*100)/100;
  if(!isEst&&!db.shop.neg){for(const l of ls){const o=billOwnQ(l.i),mx=Math.max(0,Math.round((l.i.stock+o)*1000)/1000);if(l.q>mx+1e-9)return warn(`Only ${stkLong({...l.i,stock:mx})} of ${l.i.name} available`)}}
  if(editId&&!rmAck){const ob=db.bills.find(x=>x.id==editId),gone=ob?ob.lines.filter(l=>!cart.some(c=>c.id==l.id)):[];if(gone.length){sheet('This update removes '+gone.slice(0,3).map(l=>l.n).join(', ')+(gone.length>3?' and '+(gone.length-3)+' more':'')+' from the bill. Their stock goes back and the total changes.',[['bag','Update bill anyway','rmAck=1;finish(false)'],['x','Put the removed items back','restoreRemoved()']]);return}}
@@ -2207,7 +2226,7 @@ async function saveItem(id,pm){const g=k=>(($(k)||{}).value||'').toString().trim
     pf=[[spKey,1],['#f16',pq],['#w2',1],['#w4',pq]].filter(x=>x[1]);
   if(mr>0)for(const[k,f]of pf){const v=nv(k);if(k!='#f3'&&v>mr*f+0.005)return bad(k,'Price cannot be more than the MRP')}
 if(ci>0){
-    const u0=ci/mul,u=cpb,mn=1/mk(mpP());
+    const u0=ci/mul,u=cpb,mn=1/mgM();
     for(const[k,f]of pf){
       const v=nv(k);if(!(v>0))continue;
       const bePrice = Math.ceil((u * f - 1e-9) * 100) / 100;
@@ -2299,7 +2318,7 @@ const txnRow=x=>`<div class="card line tap ${x.v?'vd':''}" onclick="${x.go}"><di
 let txQ='';
 function txnFilt(){const f=txF,q=txQ.trim().toLowerCase();return txnAll().filter(x=>inPer(x)&&(f=='all'||(f=='sales'&&x.k=='sale')||(f=='purch'&&(x.k=='purch'||x.k=='frt'))||(f=='in'&&x.k=='pin')||(f=='out'&&x.k=='pout')||(f=='exp'&&x.k=='exp')||(f=='ret'&&(x.k=='cn'||x.k=='dn'))||(f=='est'&&x.k=='est'))&&(!q||(x.pn+' '+x.no+' '+(x.kw||'')+' '+x.ty+' '+x.st+' '+(x.it||'')+' '+(x.bc||'')+' '+money(x.a)).toLowerCase().includes(q)))}
 function txnList(){const f=txF,q=txQ.trim().toLowerCase(),L=txnFilt(),sum=k=>L.filter(x=>x.k==k&&!x.v).reduce((s,x)=>s+x.a,0);
- const ok=L.filter(x=>!x.v),tot=k=>ok.filter(x=>x.k==k).reduce((t,x)=>t+x.a,0),due=k=>ok.filter(x=>x.k==k).reduce((t,x)=>t+(x.du||0),0),adv=k=>ok.filter(x=>x.k==k&&x.adv).reduce((t,x)=>t+x.a,0),CT={};ok.filter(x=>x.k=='exp').forEach(x=>CT[x.cat]=(CT[x.cat]||0)+x.a);const tc=Object.entries(CT).sort((a,b)=>b[1]-a[1])[0],est=ok.filter(x=>x.k=='est'),eo=est.filter(x=>x.st=='Open').reduce((t,x)=>t+x.a,0),
+ const ok=L.filter(x=>!x.v),tot=k=>ok.filter(x=>x.k==k).reduce((t,x)=>t+x.a,0),due=k=>ok.filter(x=>x.k==k).reduce((t,x)=>t+(x.du||0),0),adv=k=>ok.filter(x=>x.k==k&&x.adv).reduce((t,x)=>t+x.a,0),CT={};ok.filter(x=>x.k=='exp').forEach(x=>CT[x.cat]=(CT[x.cat]||0)+x.a);const est=ok.filter(x=>x.k=='est'),eo=est.filter(x=>x.st=='Open').reduce((t,x)=>t+x.a,0),
  C=f=='sales'?[['Sales',tot('sale'),'rcv'],['Still to collect',due('sale'),due('sale')>0.005?'due':'']]:f=='purch'?[['Purchases',tot('purch')+tot('frt'),'due'],['Still to pay',due('purch'),due('purch')>0.005?'due':'']]:f=='in'?[['Money received',tot('pin'),'rcv'],['Advances',adv('pin'),'']]:f=='out'?[['Money paid',tot('pout'),'due'],['Advances',adv('pout'),'']]:f=='exp'?expTiles(tot('exp')):f=='ret'?[['Sales returns',tot('cn'),'due'],['Purchase returns',tot('dn'),'rcv']]:f=='est'?[['Open estimates',eo,''],['All estimates',est.reduce((t,x)=>t+x.a,0),'']]:[['Net sales',tot('sale')-tot('cn'),'rcv','after ₹'+money(tot('cn'))+' returns · ₹'+money(L.filter(x=>x.k=='sale'&&x.v).reduce((t,x)=>t+x.a,0))+' cancelled left out'],['Purchases + expenses',tot('purch')+tot('frt')+tot('exp'),'due']];
  return `<div class="stats">${C.map(([l,v,c,sub,raw])=>`<div class="card"><span class="m">${esc(l)}</span><div class="tt ${c}">${raw?esc(v):'₹'+money(v)}</div>${sub?`<span class="m" style="font-size:11px">${esc(sub)}</span>`:''}</div>`).join('')}</div><div class="sec">${L.length} transaction${L.length==1?'':'s'}</div>${L.slice(0,200).map(txnRow).join('')||'<div class="empty"><b>No transactions</b><span class="m">Nothing matches. Try another period, filter or search.</span></div>'}`}
 function txnAdd(){sheet('Add',[['bag','New sale','newSale()'],['box','New purchase','newPurch()'],['down','Receive money','recvPick()'],['up','Pay supplier','paySPick()'],['coin','Add expense','expForm()'],['doc','New estimate','newEst()']])}
